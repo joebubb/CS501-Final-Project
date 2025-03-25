@@ -35,3 +35,8 @@ A **bottom navigation bar** will provide access to **new journal entries, streak
 When creating a new entry, users will first **capture a photo**, followed by a **text entry screen**, where they can either **write freely** or generate an **AI prompt** using a button.  
 
 **AI-generated reflections** will be accessible after completing an entry, offering insights tailored to the user’s writing.  
+
+## 🖼️ Figma Sketch  
+Here is a preview of the initial Figma design for the app:  
+
+![Figma Sketch](sketch.png)
