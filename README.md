@@ -1,6 +1,49 @@
-# CS501-Final-Project
+# CS501 Final Project - AI-Powered Journaling App  
 
-Journaling can be a powerful tool for self-reflection and personal growth but many people struggle with consistency and knowing what to write. We decided to make a journaling app that makes the process more engaging. It will incorporate AI generated prompts and motivational features. Similar to the app BeReal, each journal entry has a photo to capture the moment before the user starts writing. The app provides AI guidance, push notifications as reminders, and a streak system to encourage regular journaling. A calendar view will allow users to revisit past entries, and a delayed commenting feature enables reflection on older journal entries. Additionally, a Snapchat inspired “Memories” function brings back past journal entries from the same date in previous years causing nostalgia and increased self awareness. For users who want deeper insights, the app will offer automatic reflection on their completed entries to provide personalized feedback and self-improvement suggestions.
-The backend of the app will be built using Firebase as the database to store user accounts, journal entries, and push notification data. Firebase Cloud Messaging will handle reminders, ensuring users are notified at their preferred journaling time. The Gemini API will be used to handle all AI features including generating writing prompts and providing reflections on past journal entries. The app also utilizes the device’s camera as a sensor, requiring users to take a photo before beginning each journal entry. This is to force the user to capture a real life moment before writing an entry for the journal.
-Testing will focus on smartphones and tablets. Phones are the most commonly used mobile device and provide a convenient platform for quick journal entries. It is easiest for a user to take a picture with a phone. Tablets have a larger screen, making them ideal for a more immersive writing experience. The interface will be designed to adapt to different device sizes and orientations..
-The app’s interface will have a calendar-based home screen where users can access past entries. A bottom navigation bar will provide access to new journal entries, streak tracking, and settings. When creating a new entry, users will first capture a photo, followed by a text entry screen where they can either write freely or generate an AI prompt using a button. AI generated reflections will be accessible after completing an entry, offering insights tailored to the user’s writing.
+## 📝 Introduction  
+Journaling can be a powerful tool for self-reflection and personal growth, but many people struggle with consistency and knowing what to write. We decided to make a journaling app that makes the process more engaging.  
+
+It will incorporate **AI-generated prompts** and **motivational features**. Similar to the app *BeReal*, each journal entry has a **photo to capture the moment** before the user starts writing.  
+
+## ✨ Features  
+- **AI Guidance:** The app provides AI-generated prompts to help users when they don't know what to write.  
+- **Push Notifications:** Reminders ensure users stay consistent with their journaling habit.  
+- **Streak System:** Encourages users to keep journaling regularly.  
+- **Calendar View:** Allows users to revisit past entries.  
+- **Delayed Commenting:** Enables reflection on older journal entries.  
+- **Memories Feature:** Similar to *Snapchat Memories*, the app resurfaces journal entries from the same date in previous years, creating a nostalgic and reflective experience.  
+- **AI Reflections:** For deeper insights, AI will analyze past journal entries and provide personalized feedback and self-improvement suggestions.  
+
+## 📸 Photo-First Journaling  
+The app **utilizes the device’s camera**, requiring users to take a **photo before starting a journal entry**. This ensures users capture a **real-life moment** before writing, making each entry more meaningful.  
+
+## 🏗️ Backend & AI Integration  
+The backend of the app will be built using **Firebase** as the database to store:  
+- User accounts  
+- Journal entries  
+- Push notification data  
+
+**Firebase Cloud Messaging** will handle reminders, ensuring users are notified at their preferred journaling time.  
+
+The **Gemini API** will power AI features, including:  
+- Generating **writing prompts**  
+- Providing **reflections** on past journal entries  
+
+## 📱 Target Platforms  
+Testing will focus on **smartphones** and **tablets**:  
+- **Phones** are ideal for quick entries and effortless photo capture.  
+- **Tablets** offer a **larger screen** for a more immersive writing experience.  
+
+The interface will be designed to **adapt to different device sizes and orientations**.  
+
+## 🏠 User Experience  
+- **Home Screen:** A **calendar-based** interface where users can access past entries.  
+- **Bottom Navigation Bar:** Quick access to journal entries, streak tracking, and settings.  
+- **New Entry Flow:**  
+  1. **Capture a photo** 📸  
+  2. **Write freely or generate an AI prompt** ✍️  
+  3. **Receive AI-generated reflections** 🤖  
+
+---
+
+This project is developed as part of **CS501** and focuses on enhancing journaling habits with **AI and interactive features**. 🚀  
