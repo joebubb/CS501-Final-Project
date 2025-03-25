@@ -43,7 +43,3 @@ The interface will be designed to **adapt to different device sizes and orientat
   1. **Capture a photo** 📸  
   2. **Write freely or generate an AI prompt** ✍️  
   3. **Receive AI-generated reflections** 🤖  
-
----
-
-This project is developed as part of **CS501** and focuses on enhancing journaling habits with **AI and interactive features**. 🚀  
