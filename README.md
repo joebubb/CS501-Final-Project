@@ -39,7 +39,7 @@ The app’s interface will have a **calendar-based home screen**, allowing users
 
 A **bottom navigation bar** will provide quick access to:  
 - **New journal entries**  
-- **Streak tracking**  
+- **Archives**  
 - **Settings**  
 
 ### ✍️ New Entry Flow  
