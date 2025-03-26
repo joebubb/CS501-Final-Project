@@ -39,4 +39,4 @@ When creating a new entry, users will first **capture a photo**, followed by a *
 ## 🖼️ Figma Sketch  
 Here is a preview of the initial Figma design for the app:  
 
-![Figma Sketch](sketch.png)
+![Figma Sketch](assets/sketch.png)
