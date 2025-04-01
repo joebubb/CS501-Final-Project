@@ -3,6 +3,7 @@ package com.pictoteam.pictonote
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyRow
@@ -14,14 +15,17 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHost
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import androidx.navigation.compose.rememberNavController
+import com.pictoteam.pictonote.model.GeminiViewModel
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -174,40 +178,82 @@ fun ArchiveScreen() {
 }
 
 @Composable
-fun JournalScreen() {
+fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
     var text by remember { mutableStateOf("") }
+    val apiCallResult by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for a suggestion.")
+
+    val isLoading = apiCallResult == "Calling API..."
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
     ) {
+        Text("Journal Entry", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
         BasicTextField(
             value = text,
             onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .border(1.dp, MaterialTheme.colorScheme.outline),
             decorationBox = { innerTextField ->
                 Box(modifier = Modifier.padding(16.dp)) {
+                    if (text.isEmpty()) {
+                        Text("What's on your mind?", color = MaterialTheme.colorScheme.outline)
+                    }
                     innerTextField()
                 }
             }
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = apiCallResult,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                if (isLoading) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Row(
-            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Button(onClick = { /* Here we have the API prompting function */ }) {
+            Button(
+                onClick = {
+                    geminiViewModel.journalPromptSuggestion
+                },
+                enabled = !isLoading
+            ) {
                 Text("Prompt")
             }
-            Button(onClick = { /*Here we have the API reflection function */ }) {
+            Button(onClick = { /* TODO: Implement Reflection */ }) {
                 Text("Reflection")
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Button(
             onClick = {
-                // Implement the logic to save the journal entry in the database when we do that
-                //in the next sprint
-                saveJournalEntry(text)
                 text = ""
             },
+            modifier = Modifier.align(Alignment.End)
         ) {
             Text("Finish Entry")
         }
