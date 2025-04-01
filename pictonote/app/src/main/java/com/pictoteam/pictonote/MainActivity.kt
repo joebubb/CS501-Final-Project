@@ -97,7 +97,7 @@ fun DefaultPreview() {
             Spacer(modifier = Modifier.height(8.dp))
             Text("Preview Result Text")
             Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = { /* Preview Button */ }) {
+            Button(onClick = {  }) {
                 Text("Call API Again")
             }
         }
