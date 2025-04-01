@@ -3,6 +3,7 @@ package com.pictoteam.pictonote
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,6 +22,8 @@ import androidx.navigation.compose.*
 import java.time.YearMonth
 
 class MainActivity : ComponentActivity() {
+    private val geminiKey = BuildConfig.GEMINI_API_KEY
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
