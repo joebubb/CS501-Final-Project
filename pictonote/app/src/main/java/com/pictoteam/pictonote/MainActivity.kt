@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
 fun GeminiApiScreen(
     viewModel: GeminiViewModel = viewModel()
 ) {
-    val apiResultState by viewModel.apiResult.observeAsState("Initializing...")
     val journalPromptState by viewModel.journalPromptSuggestion.observeAsState("No prompt suggested yet.")
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
