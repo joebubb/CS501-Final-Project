@@ -8,53 +8,13 @@ data class GenerateContentRequest(
 
 )
 
-/* --- Optional Sub-Models for Request (Uncomment and define if used) ---
-@JsonClass(generateAdapter = true)
-data class GenerationConfig(
-    val temperature: Float?,
-    val topK: Int?,
-    val topP: Float?,
-    val maxOutputTokens: Int?,
-    val stopSequences: List<String>?
-)
-
-@JsonClass(generateAdapter = true)
-data class SafetySetting(
-    val category: String, // e.g., HARM_CATEGORY_HARASSMENT
-    val threshold: String // e.g., BLOCK_MEDIUM_AND_ABOVE
-)
-
-@JsonClass(generateAdapter = true)
-data class Blob(
-    val mimeType: String,
-    val data: String // Base64 encoded data
-)
-*/
-
-
-// =====================================================================================
-// == Response Models (Data received FROM the API)
-// =====================================================================================
-
-/**
- * Represents the overall response from the generateContent endpoint.
- */
 @JsonClass(generateAdapter = true)
 data class GenerateContentResponse(
-    /** A list of generated content candidates. */
     val candidates: List<Candidate>?,
-
-    /** Metadata about the tokens used in the request and response. */
     val usageMetadata: UsageMetadata?,
-
-    /** The specific model version used for generation. */
     val modelVersion: String?
-    // val promptFeedback: PromptFeedback? // Can sometimes appear based on safety settings
 )
 
-/**
- * Represents a single generated content candidate.
- */
 @JsonClass(generateAdapter = true)
 data class Candidate(
     /** The generated content itself. */

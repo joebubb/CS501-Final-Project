@@ -1,7 +1,7 @@
 package com.pictoteam.pictonote.api
 
-import com.pictoteam.pictonote.model.GenerateContentRequest // Import request model
-import com.pictoteam.pictonote.model.GenerateContentResponse // Import response model
+import com.pictoteam.pictonote.model.GenerateContentRequest
+import com.pictoteam.pictonote.model.GenerateContentResponse
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Path
