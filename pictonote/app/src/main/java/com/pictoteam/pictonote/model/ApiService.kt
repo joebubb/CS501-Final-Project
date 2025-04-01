@@ -1,12 +1,35 @@
-package com.pictoteam.pictonote.model
+package com.pictoteam.pictonote.api
 
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import retrofit2.Retrofit
+import com.pictoteam.pictonote.model.GenerateContentRequest // Import request model
+import com.pictoteam.pictonote.model.GenerateContentResponse // Import response model
+import retrofit2.http.Body
+import retrofit2.http.POST
+import retrofit2.http.Path
+import retrofit2.http.Query
 
-private val moshi = Moshi.Builder()
-    .add(KotlinJsonAdapterFactory())
-    .build()
+/**
+ * Defines the API endpoints for the Google Generative Language API (Gemini).
+ */
+interface GeminiApiService {
 
-val retrofit = Retrofit.Builder()
-    .baseUrl()
+    /**
+     * Generates content based on the provided request body using a specified model.
+     *
+     * Corresponds to:
+     * POST /v1beta/models/{model}:generateContent?key=YOUR_API_KEY
+     *
+     * @param modelName The name of the model (e.g., "gemini-1.5-flash-latest").
+     * @param apiKey Your API key.
+     * @param request The request body containing the prompt.
+     * @return A [GenerateContentResponse] containing the generated content.
+     */
+    @POST("v1beta/models/{model}:generateContent")
+    suspend fun generateContent(
+        @Path("model") modelName: String,
+        @Query("key") apiKey: String,
+        @Body request: GenerateContentRequest
+    ): GenerateContentResponse
+
+    // --- Add other API endpoints here as needed (e.g., countTokens) ---
+
+}
