@@ -114,7 +114,8 @@ fun HomeScreen() {
             Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Reminders", style = MaterialTheme.typography.headlineSmall)
-                    Button(onClick = { /* Setup push notifications */ }) {
+                    Button(onClick = { /* Setup push notifications, need firebase to do that so doing it
+                     with the database sprint*/ }) {
                         Text("Set up Push Notifications")
                     }
                 }
@@ -125,8 +126,8 @@ fun HomeScreen() {
 
 @Composable
 fun ArchiveScreen() {
-    var selectedMonth by remember { mutableIntStateOf(1) }
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    var selectedMonth by remember { mutableStateOf(1) }
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Calendar - 2025", style = MaterialTheme.typography.headlineMedium)
         LazyRow(modifier = Modifier.fillMaxWidth(), userScrollEnabled = true) {
             items(12) { monthIndex ->
@@ -140,12 +141,30 @@ fun ArchiveScreen() {
         LazyVerticalGrid(columns = GridCells.Fixed(5), modifier = Modifier.padding(8.dp)) {
             val daysInMonth = YearMonth.of(2025, selectedMonth).lengthOfMonth()
             items(daysInMonth) { day ->
-                Box(
+                Card(
                     modifier = Modifier
                         .padding(8.dp)
+                        .fillMaxWidth()
                         .aspectRatio(1f)
                 ) {
-                    Text("${day + 1}", style = MaterialTheme.typography.bodyMedium)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Text("${day + 1}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+        Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(50.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Memories", style = MaterialTheme.typography.headlineMedium)
                 }
             }
         }
