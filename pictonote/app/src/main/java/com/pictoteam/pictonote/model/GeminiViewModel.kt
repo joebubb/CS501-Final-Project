@@ -12,7 +12,7 @@ import com.pictoteam.pictonote.BuildConfig
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-class MainViewModel : ViewModel() {
+class GeminiViewModel : ViewModel() {
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-1.5-flash-latest"
 
