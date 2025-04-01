@@ -2,23 +2,10 @@ package com.pictoteam.pictonote.model
 
 import com.squareup.moshi.JsonClass
 
-// =====================================================================================
-// == Request Models (Data sent TO the API)
-// =====================================================================================
-
-/**
- * Represents the overall request body sent to the generateContent endpoint.
- */
 @JsonClass(generateAdapter = true)
 data class GenerateContentRequest(
-    /** The list of content blocks making up the prompt. */
     val contents: List<Content>,
 
-    /** Optional: Configuration settings for generation (temperature, topP, etc.). */
-    // val generationConfig: GenerationConfig? = null,
-
-    /** Optional: Safety settings to filter harmful content. */
-    // val safetySettings: List<SafetySetting>? = null
 )
 
 /* --- Optional Sub-Models for Request (Uncomment and define if used) ---

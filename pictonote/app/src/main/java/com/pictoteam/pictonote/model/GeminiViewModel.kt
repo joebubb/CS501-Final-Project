@@ -21,13 +21,11 @@ class GeminiViewModel : ViewModel() {
 
     init {
         Log.d("GeminiTestVM", "ViewModel initialized.")
-        // Optionally call immediately when ViewModel is created
-        // makeSimpleApiCall()
     }
 
 
     fun makeSimpleApiCall() {
-        _apiResult.value = "Calling API..." // Update UI state
+        _apiResult.value = "Calling API..."
 
         viewModelScope.launch {
             Log.d("GeminiTestVM", "Coroutine launched. Preparing API call...")
@@ -45,7 +43,7 @@ class GeminiViewModel : ViewModel() {
                 val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                 if (generatedText != null) {
                     Log.i("GeminiTestVM", "Generated Text: $generatedText")
-                    _apiResult.postValue(generatedText) // Update LiveData for UI
+                    _apiResult.postValue(generatedText)
                 } else {
                     Log.w("GeminiTestVM", "Received response, but text content was null or empty.")
                     Log.d("GeminiTestVM", "Full Response: $response")
