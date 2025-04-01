@@ -19,6 +19,9 @@ class GeminiViewModel : ViewModel() {
     private val _apiResult = MutableLiveData<String>()
     val apiResult: LiveData<String> = _apiResult
 
+    private val _journalPromptSuggestion = MutableLiveData<String>()
+    val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
+
     init {
         Log.d("GeminiTestVM", "ViewModel initialized.")
     }
@@ -58,6 +61,44 @@ class GeminiViewModel : ViewModel() {
             } catch (e: Exception) {
                 Log.e("GeminiTestVM", "Generic Error: ${e.message}", e)
                 _apiResult.postValue("Error: ${e.message}")
+            }
+        }
+    }
+
+    fun suggestJournalPrompt() {
+        _journalPromptSuggestion.value = "Generating prompt suggestion..."
+
+        viewModelScope.launch {
+            Log.d("GeminiViewModel", "[JournalPrompt] Coroutine launched. Preparing API call...")
+            val promptForGemini = "Suggest a thoughtful and inspiring journal prompt suitable for self-reflection."
+            val request = GenerateContentRequest(
+                contents = listOf(Content(parts = listOf(Part(text = promptForGemini))))
+            )
+            Log.d("GeminiViewModel", "[JournalPrompt] Request Body Created: $request")
+
+            try {
+                Log.d("GeminiViewModel", "[JournalPrompt] Calling apiService.generateContent...")
+                val response = GeminiApiClient.apiService.generateContent(modelName, geminiApiKey, request)
+                Log.d("GeminiViewModel", "[JournalPrompt] API call successful.")
+
+                val generatedPrompt = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                if (!generatedPrompt.isNullOrBlank()) {
+                    Log.i("GeminiViewModel", "[JournalPrompt] Generated Prompt Suggestion: $generatedPrompt")
+                    _journalPromptSuggestion.postValue(generatedPrompt.trim())
+                } else {
+                    Log.w("GeminiViewModel", "[JournalPrompt] Received response, but prompt text was null or empty.")
+                    Log.d("GeminiViewModel", "[JournalPrompt] Full Response: $response")
+                    _journalPromptSuggestion.postValue("Could not generate a prompt suggestion.")
+                }
+
+            } catch (e: HttpException) {
+                val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
+                Log.e("GeminiViewModel", "[JournalPrompt] HTTP Error: ${e.code()} - ${e.message()}. Body: $errorBody", e)
+                _journalPromptSuggestion.postValue("Error fetching prompt: HTTP ${e.code()}.")
+
+            } catch (e: Exception) {
+                Log.e("GeminiViewModel", "[JournalPrompt] Generic Error: ${e.message}", e)
+                _journalPromptSuggestion.postValue("Error fetching prompt: ${e.message}")
             }
         }
     }

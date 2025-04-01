@@ -14,12 +14,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pictoteam.pictonote.model.GeminiViewModel
@@ -42,9 +40,8 @@ fun GeminiApiScreen(
     viewModel: GeminiViewModel = viewModel()
 ) {
     val apiResultState by viewModel.apiResult.observeAsState("Initializing...")
-    LaunchedEffect(Unit) {
-        viewModel.makeSimpleApiCall()
-    }
+    val journalPromptState by viewModel.journalPromptSuggestion.observeAsState("No prompt suggested yet.")
+
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
             modifier = Modifier
@@ -53,52 +50,24 @@ fun GeminiApiScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Gemini API Test")
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text("API Result:")
+            Text("Journal Prompt Suggestion:")
             Spacer(modifier = Modifier.height(8.dp))
-
-            when (apiResultState) {
-                "Calling API..." -> {
+            when (journalPromptState) {
+                "Generating prompt suggestion..." -> {
                     CircularProgressIndicator()
                 }
-                "Initializing..." -> {
-                    Text("Waiting to call API...")
+                "No prompt suggested yet." -> {
+                    Text("Click the button below to get a suggestion.")
                 }
                 else -> {
-                    Text(text = apiResultState)
+                    Text(text = journalPromptState)
                 }
             }
-
-
             Spacer(modifier = Modifier.height(24.dp))
-
             Button(onClick = {
-                viewModel.makeSimpleApiCall()
+                viewModel.suggestJournalPrompt()
             }) {
-                Text("Call API Again")
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    PictoNoteTheme {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Gemini API Test")
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("API Result:")
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Preview Result Text")
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = {  }) {
-                Text("Call API Again")
+                Text("Suggest Journal Prompt")
             }
         }
     }

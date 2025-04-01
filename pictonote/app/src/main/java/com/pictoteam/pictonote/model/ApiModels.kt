@@ -53,7 +53,7 @@ data class TokenDetails(
 
 @JsonClass(generateAdapter = true)
 data class Content(
-    val parts: List<Part>?, // List can be null or empty
+    val parts: List<Part>?,
     val role: String? = null
 )
 
