@@ -12,6 +12,8 @@ composeBom = "2024.04.01"
 moshi = "1.15.2"
 moshiKotlin = "1.15.2"
 retrofit = "2.11.0"
+androidx-navigation = "2.7.2"
+
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -32,6 +34,9 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
 moshi-kotlin = { module = "com.squareup.moshi:moshi-kotlin", version.ref = "moshiKotlin" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+androidx-navigation-runtime-ktx = { module = "androidx.navigation:navigation-runtime-ktx", version.ref = "androidx-navigation" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "androidx-navigation" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

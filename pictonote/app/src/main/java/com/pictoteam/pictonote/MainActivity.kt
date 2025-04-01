@@ -3,7 +3,6 @@ package com.pictoteam.pictonote
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,15 +14,17 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import java.time.YearMonth
+import java.time.format.TextStyle
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-    private val geminiKey = BuildConfig.GEMINI_API_KEY
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -79,38 +80,72 @@ fun NavigationGraph(navController: NavHostController) {
 
 @Composable
 fun HomeScreen() {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         Text("Home Page", style = MaterialTheme.typography.headlineMedium)
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Streak", style = MaterialTheme.typography.headlineSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
+                        daysOfWeek.forEach { day ->
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(day, fontSize = 16.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Reminders", style = MaterialTheme.typography.headlineSmall)
+                    Button(onClick = { /* Setup push notifications */ }) {
+                        Text("Set up Push Notifications")
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 fun ArchiveScreen() {
-    var selectedMonth by remember { mutableStateOf(1) }
+    var selectedMonth by remember { mutableIntStateOf(1) }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Calendar - 2025", style = MaterialTheme.typography.headlineMedium)
-        LazyRow(modifier = Modifier.fillMaxWidth()) {
-            items(12) { month ->
-                Button(onClick = { selectedMonth = month + 1 }) {
-                    Text("Month ${month + 1}")
+        LazyRow(modifier = Modifier.fillMaxWidth(), userScrollEnabled = true) {
+            items(12) { monthIndex ->
+                val monthName = YearMonth.of(2025, monthIndex + 1)
+                    .month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+                Button(onClick = { selectedMonth = monthIndex + 1 }) {
+                    Text(monthName)
                 }
             }
         }
         LazyVerticalGrid(columns = GridCells.Fixed(5), modifier = Modifier.padding(8.dp)) {
             val daysInMonth = YearMonth.of(2025, selectedMonth).lengthOfMonth()
             items(daysInMonth) { day ->
-                Card(
-                    modifier = Modifier.padding(8.dp)
+                Box(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .aspectRatio(1f)
                 ) {
-
-
-                    Box(
-                        modifier = Modifier
-                            .padding(8.dp)
-                            .aspectRatio(1f)
-                    ) {
-                        Text("$selectedMonth/$day", style = MaterialTheme.typography.bodyMedium)
-                    }
+                    Text("${day + 1}", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -129,21 +164,31 @@ fun JournalScreen() {
             onValueChange = { text = it },
             modifier = Modifier.fillMaxWidth().weight(1f),
             decorationBox = { innerTextField ->
-                Box(modifier = Modifier.padding(8.dp)) {
+                Box(modifier = Modifier.padding(16.dp)) {
                     innerTextField()
                 }
             }
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Button(onClick = { /* Prompt action */ }) {
+            Button(onClick = { /* Here we have the API prompting function */ }) {
                 Text("Prompt")
             }
-            Button(onClick = { /* Reflection action */ }) {
+            Button(onClick = { /*Here we have the API reflection function */ }) {
                 Text("Reflection")
             }
+        }
+        Button(
+            onClick = {
+                // Implement the logic to save the journal entry in the database when we do that
+                //in the next sprint
+                saveJournalEntry(text)
+                text = ""
+            },
+        ) {
+            Text("Finish Entry")
         }
     }
 }
