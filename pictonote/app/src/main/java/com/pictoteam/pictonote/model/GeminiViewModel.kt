@@ -1,13 +1,12 @@
 package com.pictoteam.pictonote.model
 
-
-
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
 import com.pictoteam.pictonote.BuildConfig
+
 
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
@@ -22,10 +21,13 @@ class GeminiViewModel : ViewModel() {
     private val _journalPromptSuggestion = MutableLiveData<String>()
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
 
+    private val _isPromptLoading = MutableLiveData<Boolean>(false)
+    val isPromptLoading: LiveData<Boolean> = _isPromptLoading
+
+
     init {
         Log.d("GeminiTestVM", "ViewModel initialized.")
     }
-
 
     fun makeSimpleApiCall() {
         _apiResult.value = "Calling API..."
@@ -40,6 +42,7 @@ class GeminiViewModel : ViewModel() {
 
             try {
                 Log.d("GeminiTestVM", "Calling apiService.generateContent...")
+                // Make sure GeminiApiClient and its models (GenerateContentRequest, etc.) are correctly imported
                 val response = GeminiApiClient.apiService.generateContent(modelName, geminiApiKey, request)
                 Log.d("GeminiTestVM", "API call successful.")
 
@@ -66,8 +69,8 @@ class GeminiViewModel : ViewModel() {
     }
 
     fun suggestJournalPrompt() {
+        _isPromptLoading.value = true
         _journalPromptSuggestion.value = "Generating prompt suggestion..."
-
         viewModelScope.launch {
             Log.d("GeminiViewModel", "[JournalPrompt] Coroutine launched. Preparing API call...")
             val promptForGemini = "Suggest a thoughtful and inspiring journal prompt suitable for self-reflection."
@@ -99,6 +102,8 @@ class GeminiViewModel : ViewModel() {
             } catch (e: Exception) {
                 Log.e("GeminiViewModel", "[JournalPrompt] Generic Error: ${e.message}", e)
                 _journalPromptSuggestion.postValue("Error fetching prompt: ${e.message}")
+            } finally {
+                _isPromptLoading.postValue(false)
             }
         }
     }

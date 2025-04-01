@@ -180,9 +180,8 @@ fun ArchiveScreen() {
 @Composable
 fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
     var text by remember { mutableStateOf("") }
-    val apiCallResult by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for a suggestion.")
-
-    val isLoading = apiCallResult == "Calling API..."
+    val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for a suggestion.")
+    val isLoading by geminiViewModel.isPromptLoading.observeAsState(false)
 
     Column(
         modifier = Modifier
@@ -212,11 +211,13 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
         Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = apiCallResult,
+                    text = promptSuggestion,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -236,13 +237,13 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
         ) {
             Button(
                 onClick = {
-                    geminiViewModel.journalPromptSuggestion
+                    geminiViewModel.suggestJournalPrompt()
                 },
                 enabled = !isLoading
             ) {
                 Text("Prompt")
             }
-            Button(onClick = { /* TODO: Implement Reflection */ }) {
+            Button(onClick = { /* TODO: Implement Reflection API Call */ }) {
                 Text("Reflection")
             }
         }
