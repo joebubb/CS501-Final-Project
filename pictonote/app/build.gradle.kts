@@ -80,6 +80,8 @@ dependencies {
 
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-storage")
+    implementation("com.google.firebase:firebase-messaging")
 
 
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
