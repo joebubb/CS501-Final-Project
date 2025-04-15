@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -21,14 +22,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.pictoteam.pictonote.composables.SettingsScreen
 import com.pictoteam.pictonote.model.GeminiViewModel
 import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
+import com.pictoteam.pictonote.model.SettingsViewModel
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -37,7 +41,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            PictoNoteTheme {
+            // get the SettingsViewModel
+            val settingsViewModel: SettingsViewModel = viewModel()
+            val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
+
+            PictoNoteTheme(
+                darkTheme = settings.isDarkMode,       // dark mode state
+                baseFontSize = settings.baseFontSize   // font size
+            ) {
                 PictoNote()
             }
         }
@@ -51,63 +62,61 @@ fun PictoNote() {
         bottomBar = { BottomNavigationBar(navController) }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
-            NavigationGraph(navController)
+            NavigationGraph(navController = navController)
         }
     }
 }
 
 @Composable
 fun BottomNavigationBar(navController: NavHostController) {
-    // TODO: Implement logic to highlight the selected item based on the current route
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = currentBackStackEntry?.destination
-    val selectedRoute = currentDestination?.route
+    val currentRoute = currentBackStackEntry?.destination?.route
 
     NavigationBar {
+        // Archive Item
         NavigationBarItem(
             icon = { Icon(Icons.Default.AccountBox, contentDescription = "Archive") },
             label = { Text("Archive") },
-            selected = selectedRoute == "archive",
-            onClick = {
-                if (navController.currentDestination?.route != "archive") {
-                    navController.navigate("archive") {
-                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            }
+            selected = currentRoute == "archive",
+            onClick = { navigateTo(navController, "archive") }
         )
+        // Home Item
         NavigationBarItem(
             icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
             label = { Text("Home") },
-            selected = selectedRoute == "home",
-            onClick = {
-                if (navController.currentDestination?.route != "home") {
-                    navController.navigate("home") {
-                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            }
+            selected = currentRoute == "home",
+            onClick = { navigateTo(navController, "home") }
         )
+        // Journal Item
         NavigationBarItem(
             icon = { Icon(Icons.Default.Favorite, contentDescription = "Journal") },
             label = { Text("Journal") },
-            selected = selectedRoute == "journal",
-            onClick = {
-                if (navController.currentDestination?.route != "journal") {
-                    navController.navigate("journal") {
-                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            }
+            selected = currentRoute == "journal",
+            onClick = { navigateTo(navController, "journal") }
+        )
+        // Settings Item
+        NavigationBarItem(
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") }, // Settings icon
+            label = { Text("Settings") },
+            selected = currentRoute == "settings",
+            onClick = { navigateTo(navController, "settings") } // Navigate to "settings"
         )
     }
 }
+
+private fun navigateTo(navController: NavHostController, route: String) {
+    // Navigate only if the destination is different from the current one
+    if (navController.currentDestination?.route != route) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.startDestinationId) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+}
+
 
 @Composable
 fun NavigationGraph(navController: NavHostController) {
@@ -115,8 +124,10 @@ fun NavigationGraph(navController: NavHostController) {
         composable("home") { HomeScreen() }
         composable("archive") { ArchiveScreen() }
         composable("journal") { JournalScreen() }
+        composable("settings") { SettingsScreen() }
     }
 }
+
 
 @Composable
 fun HomeScreen() {
@@ -150,7 +161,7 @@ fun HomeScreen() {
                                 .size(36.dp)
                                 .border(
                                     1.dp,
-                                    if (isCompleted) MaterialTheme.colorScheme.primary else Color.Gray, // Example border
+                                    if (isCompleted) MaterialTheme.colorScheme.primary else Color.Gray,
                                     shape = MaterialTheme.shapes.small
                                 )
                                 .padding(4.dp),
@@ -158,8 +169,7 @@ fun HomeScreen() {
                         ) {
                             Text(
                                 day,
-                                fontSize = 16.sp,
-                                color = if (isCompleted) MaterialTheme.colorScheme.primary else LocalContentColor.current // Example color
+                                color = if (isCompleted) MaterialTheme.colorScheme.primary else LocalContentColor.current
                             )
                         }
                     }
@@ -173,7 +183,7 @@ fun HomeScreen() {
                 Text("Reminders", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = { /* TODO: Implement push notification setup logic */ }) {
-                    Text("Set up Push Notifications")
+                    Text("Set up Push Notifications") // Text size scaled by theme
                 }
                 // TODO: Add display for existing reminders if any
             }
@@ -181,10 +191,11 @@ fun HomeScreen() {
     }
 }
 
+
 @Composable
 fun ArchiveScreen() {
-    var selectedMonth by remember { mutableStateOf(YearMonth.now().monthValue) } // Default to current month
-    val currentYear = YearMonth.now().year // Use current year
+    var selectedMonth by remember { mutableStateOf(YearMonth.now().monthValue) }
+    val currentYear = YearMonth.now().year
 
     Column(
         modifier = Modifier
@@ -252,7 +263,7 @@ fun ArchiveScreen() {
                     ) {
                         Text(
                             text = "$dayOfMonth",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium, // Text size scaled by theme
                             color = if (hasEntry) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -264,7 +275,7 @@ fun ArchiveScreen() {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .weight(1f) // Takes remaining space
                 .padding(top = 8.dp)
         ) {
             Box(
@@ -274,11 +285,12 @@ fun ArchiveScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 // TODO: Replace with actual memory display logic
-                Text("Memories Area", style = MaterialTheme.typography.headlineSmall)
+                Text("Memories Area", style = MaterialTheme.typography.headlineSmall) // Text size scaled
             }
         }
     }
 }
+
 
 @Composable
 fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
@@ -286,7 +298,7 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for a suggestion.")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
 
-    val reflectionResult by geminiViewModel.journalReflection.observeAsState("") // Default to empty string
+    val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
 
     Column(
@@ -294,8 +306,7 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        // Journal Entry Section
-        Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp)) // Use larger title
+        Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
         BasicTextField(
             value = text,
             onValueChange = { text = it },
@@ -306,11 +317,10 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
             decorationBox = { innerTextField ->
                 Box(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     if (text.isEmpty()) {
-                        Text("What's on your mind?", color = MaterialTheme.colorScheme.outline)
+                        Text("What's on your mind?", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                     }
                     innerTextField()
                 }
@@ -319,7 +329,6 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Suggestion Card
         Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -343,7 +352,6 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Reflection Card
         Text("Reflection:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -356,8 +364,8 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
                 Text(
                     text = when {
                         isLoadingReflection -> "Generating reflection..."
-                        reflectionResult.isBlank() && !text.isBlank() -> "Click 'Reflection' for insights on your entry." // Prompt only if text exists
-                        reflectionResult.isBlank() && text.isBlank() -> "Write an entry first." // Prompt if text is empty
+                        reflectionResult.isBlank() && text.isNotBlank() -> "Click 'Reflection' for insights."
+                        reflectionResult.isBlank() && text.isBlank() -> "Write an entry first."
                         else -> reflectionResult
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -378,19 +386,14 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Button(
-                onClick = {
-                    geminiViewModel.suggestJournalPrompt()
-                },
+                onClick = { geminiViewModel.suggestJournalPrompt() },
                 enabled = !isLoadingPrompt && !isLoadingReflection
             ) {
                 Text("Prompt")
             }
 
-            // Reflection Button
             Button(
-                onClick = {
-                    geminiViewModel.reflectOnJournalEntry(text)
-                },
+                onClick = { geminiViewModel.reflectOnJournalEntry(text) },
                 enabled = !isLoadingReflection && !isLoadingPrompt && text.isNotBlank()
             ) {
                 Text("Reflection")
@@ -403,11 +406,9 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
             onClick = {
                 saveJournalEntry(text)
                 text = ""
-                // TODO: Optionally clear the reflection in the ViewModel
                 // geminiViewModel.clearReflection()
             },
             modifier = Modifier.align(Alignment.End),
-            // Enabled only if text is not empty and no API calls are happening
             enabled = text.isNotBlank() && !isLoadingPrompt && !isLoadingReflection
         ) {
             Text("Finish Entry")
