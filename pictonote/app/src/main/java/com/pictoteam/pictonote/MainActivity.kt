@@ -38,7 +38,6 @@ import com.pictoteam.pictonote.model.SettingsViewModel
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.roundToInt
 
 // main activity: entry point of the app
 class MainActivity : ComponentActivity() {

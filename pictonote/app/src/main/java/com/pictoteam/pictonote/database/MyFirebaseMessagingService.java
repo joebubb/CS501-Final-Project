@@ -1,4 +1,4 @@
-package com.pictoteam.pictonote;
+package com.pictoteam.pictonote.database;
 
 import android.app.Service;
 import android.content.Intent;
