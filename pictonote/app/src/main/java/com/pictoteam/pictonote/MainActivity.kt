@@ -1,15 +1,19 @@
 package com.pictoteam.pictonote
 
+import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Favorite
@@ -22,8 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+// Removed unused sp import
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -35,10 +41,20 @@ import com.pictoteam.pictonote.composables.SettingsScreen
 import com.pictoteam.pictonote.model.GeminiViewModel
 import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
 import com.pictoteam.pictonote.model.SettingsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.time.LocalDate
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
+
+const val JOURNAL_DIR = "journal_entries"
+val filenameDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
 // main activity: entry point of the app
 class MainActivity : ComponentActivity() {
@@ -54,7 +70,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = settings.isDarkMode,
                 baseFontSize = settings.baseFontSize
             ) {
-                PictoNote()
+                PictoNoteApp()
             }
         }
     }
@@ -62,7 +78,7 @@ class MainActivity : ComponentActivity() {
 
 // main ui layout that handles overall scaffold and navigation
 @Composable
-fun PictoNote() {
+fun PictoNoteApp() {
     val navController = rememberNavController()
     Scaffold(
         bottomBar = { BottomNavigationBar(navController) }
@@ -144,25 +160,29 @@ fun HomeScreen() {
     when {
         // tablet landscape layout: two columns
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = landscapeHorizontalPadding, vertical = screenPadding),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Home Page", style = MaterialTheme.typography.headlineMedium)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    // show streak card with full width
-                    StreakCard(modifier = commonCardModifier.fillMaxWidth(), screenWidthDp = screenWidthDp)
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    // extra space for alignment in tablet layout
-                    Spacer(modifier = Modifier.height(16.dp))
-                    RemindersCard(modifier = commonCardModifier.fillMaxWidth())
+            Column(modifier = Modifier.padding(screenPadding)) {
+                Text("Home Page", style = MaterialTheme.typography.headlineMedium)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = landscapeHorizontalPadding, vertical = screenPadding),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        // show streak card with full width
+                        StreakCard(modifier = commonCardModifier.fillMaxWidth(), screenWidthDp = screenWidthDp)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        // extra space for alignment in tablet layout
+                        Spacer(modifier = Modifier.height(16.dp))
+                        RemindersCard(modifier = commonCardModifier.fillMaxWidth())
+                    }
                 }
             }
+
         }
         // tablet portrait layout: column layout
         screenWidthDp >= 600 -> {
@@ -200,6 +220,8 @@ fun StreakCard(
     modifier: Modifier = Modifier,
     screenWidthDp: Int
 ) {
+    val context = LocalContext.current
+
     Card(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -224,10 +246,11 @@ fun StreakCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
-                val completedDays = setOf(1, 2, 4)
-                daysOfWeek.forEach { day ->
-                    val index = daysOfWeek.indexOf(day)
-                    val isCompleted = completedDays.contains(index)
+                // Placeholder - Replace with logic checking actual entries for the past week
+                val completedDaysIndices = remember { getDaysWithEntriesForPastWeek(context) }
+
+                daysOfWeek.forEachIndexed { index, day ->
+                    val isCompleted = completedDaysIndices.contains(index) // Simple check for demo
                     Box(
                         modifier = Modifier
                             .size(boxSize)
@@ -251,6 +274,29 @@ fun StreakCard(
     }
 }
 
+fun getDaysWithEntriesForPastWeek(context: Context): Set<Int> {
+    Log.w("StreakCard", "getDaysWithEntriesForPastWeek needs full implementation")
+    val today = LocalDate.now()
+    val pastWeekIndices = mutableSetOf<Int>()
+    val directory = File(context.filesDir, JOURNAL_DIR)
+
+    if (!directory.exists()) return emptySet()
+
+    for (i in 0..6) {
+        val date = today.minusDays(i.toLong())
+        val dateString = date.format(filenameDateFormatter)
+        val filename = "journal_$dateString.txt"
+        if (File(directory, filename).exists()) {
+
+            val dayOfWeekIndex = (date.dayOfWeek.value % 7) // Sunday (7) -> 0, Monday (1) -> 1 ... Saturday (6) -> 6
+            pastWeekIndices.add(dayOfWeekIndex)
+        }
+    }
+    Log.d("StreakCard","Past week indices with entries: $pastWeekIndices")
+    return pastWeekIndices
+}
+
+
 // reminders card: shows notification setup
 @Composable
 fun RemindersCard(modifier: Modifier = Modifier) {
@@ -259,20 +305,109 @@ fun RemindersCard(modifier: Modifier = Modifier) {
             Text("Reminders", style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.height(8.dp))
             // simple button for push notifications setup
-            Button(onClick = { }) { Text("Set Up Push Notifications") }
+            Button(onClick = { /* TODO: Implement notification setup navigation/logic */ }) {
+                Text("Set Up Push Notifications")
+            }
         }
     }
 }
 
+// reads journal entries directory and returns set of days with entries for the given month/year
+fun getDaysWithEntriesForMonth(context: Context, year: Int, month: Int): Set<Int> {
+    val days = mutableSetOf<Int>()
+    val directory = File(context.filesDir, JOURNAL_DIR)
+    if (!directory.exists() || !directory.isDirectory) {
+        return emptySet()
+    }
+
+    val monthPrefix = String.format("%d-%02d", year, month) // e.g., "2024-07"
+
+    directory.listFiles()?.forEach { file ->
+        // Check filename format: journal_YYYY-MM-DD.txt
+        if (file.isFile && file.name.startsWith("journal_$monthPrefix") && file.name.endsWith(".txt")) {
+            try {
+                // Extract date part: journal_yyyy-MM-dd.txt -> yyyy-MM-dd
+                val dateString = file.name.substringAfter("journal_").substringBefore(".txt")
+                val date = LocalDate.parse(dateString, filenameDateFormatter)
+                if (date.year == year && date.monthValue == month) {
+                    days.add(date.dayOfMonth)
+                }
+            } catch (e: Exception) {
+                Log.e("GetDaysWithEntries", "Error parsing filename: ${file.name}", e)
+            }
+        }
+    }
+    Log.d("GetDaysWithEntries", "Found entries for days in $monthPrefix: $days")
+    return days
+}
+
+// reads the content of the journal entry for a specific date
+fun readJournalEntryForDate(context: Context, year: Int, month: Int, day: Int): String {
+    val directory = File(context.filesDir, JOURNAL_DIR)
+    val dateString = String.format("%d-%02d-%02d", year, month, day)
+    val filename = "journal_$dateString.txt"
+    val entryFile = File(directory, filename)
+
+    return try {
+        if (entryFile.exists() && entryFile.isFile) {
+            entryFile.readText()
+        } else {
+            "No entry found for this date." // Or return null if preferred
+        }
+    } catch (e: FileNotFoundException) {
+        Log.e("ReadJournalEntry", "File not found: ${entryFile.absolutePath}", e)
+        "Error reading entry: File not found."
+    } catch (e: IOException) {
+        Log.e("ReadJournalEntry", "IOException reading entry: ${entryFile.absolutePath}", e)
+        "Error reading entry: IO Exception."
+    } catch (e: Exception) {
+        Log.e("ReadJournalEntry", "Unexpected error reading entry: ${entryFile.absolutePath}", e)
+        "An unexpected error occurred."
+    }
+}
+
+// --- New Helper to read TODAY's entry ---
+// reads the content of today's journal entry, returns null if not found or error
+suspend fun readTodaysJournalEntry(context: Context): String? {
+    return withContext(Dispatchers.IO) { // Perform file IO off the main thread
+        val directory = File(context.filesDir, JOURNAL_DIR)
+        val todayDateString = LocalDate.now().format(filenameDateFormatter)
+        val filename = "journal_$todayDateString.txt"
+        val entryFile = File(directory, filename)
+
+        try {
+            if (entryFile.exists() && entryFile.isFile) {
+                Log.d("ReadToday", "Found today's entry: $filename")
+                entryFile.readText()
+            } else {
+                Log.d("ReadToday", "No entry file found for today: $filename")
+                null // No entry found for today
+            }
+        } catch (e: Exception) {
+            Log.e("ReadToday", "Error reading today's journal entry: ${entryFile.absolutePath}", e)
+            null // Return null on error
+        }
+    }
+}
+
+
 // archive screen layout: calendar and memories
 @Composable
 fun ArchiveScreen() {
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val orientation = configuration.orientation
+
     var selectedMonth by remember { mutableStateOf(YearMonth.now().monthValue) }
-    val currentYear = YearMonth.now().year
+    val currentYear = YearMonth.now().year // Keep focus on current year for simplicity
+    var selectedDay by remember { mutableStateOf<Int?>(null) }
+
     val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
+
+    LaunchedEffect(selectedMonth) {
+        selectedDay = null // Reset day when month changes
+    }
 
     when {
         // tablet landscape: calendar and memories side by side
@@ -283,38 +418,35 @@ fun ArchiveScreen() {
                     .padding(horizontal = screenPadding + 8.dp, vertical = screenPadding),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(2f),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+                Column(modifier = Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         "Calendar - $currentYear",
                         style = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
-                    // month selector row to switch between months
-                    MonthSelectorRow(currentYear, selectedMonth) { selectedMonth = it }
-                    // display calendar grid using adaptive columns
+                    MonthSelectorRow(currentYear, selectedMonth) { newMonth -> selectedMonth = newMonth }
                     CalendarGrid(
-                        currentYear,
-                        selectedMonth,
+                        context = context,
+                        currentYear = currentYear,
+                        selectedMonth = selectedMonth,
                         columns = GridCells.Adaptive(minSize = 60.dp),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        onDateSelected = { day -> selectedDay = day }
                     )
                 }
-                Column(
-                    modifier = Modifier.weight(1f).padding(top = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // show memories card below calendar title
+                Column(modifier = Modifier.weight(1f).padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     MemoriesCard(
                         modifier = Modifier.fillMaxSize()
-                            .padding(top = (MaterialTheme.typography.headlineMedium.fontSize.value.dp + 16.dp))
+                            .padding(top = (MaterialTheme.typography.headlineMedium.fontSize.value.dp + 16.dp)),
+                        context = context,
+                        selectedYear = currentYear,
+                        selectedMonth = selectedMonth,
+                        selectedDay = selectedDay
                     )
                 }
             }
         }
-        // default column layout for tablet portrait and phone
+        // default column layout
         else -> {
             val gridColumns = if (screenWidthDp >= 600) GridCells.Adaptive(minSize = 70.dp) else GridCells.Fixed(7)
             Column(
@@ -326,15 +458,21 @@ fun ArchiveScreen() {
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
-                MonthSelectorRow(currentYear, selectedMonth) { selectedMonth = it }
+                MonthSelectorRow(currentYear, selectedMonth) { newMonth -> selectedMonth = newMonth }
                 CalendarGrid(
-                    currentYear,
-                    selectedMonth,
+                    context = context,
+                    currentYear = currentYear,
+                    selectedMonth = selectedMonth,
                     columns = gridColumns,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    onDateSelected = { day -> selectedDay = day }
                 )
                 MemoriesCard(
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp),
+                    context = context,
+                    selectedYear = currentYear,
+                    selectedMonth = selectedMonth,
+                    selectedDay = selectedDay
                 )
             }
         }
@@ -373,11 +511,17 @@ fun MonthSelectorRow(
 // calendar grid: displays days in the selected month
 @Composable
 fun CalendarGrid(
+    context: Context,
     currentYear: Int,
     selectedMonth: Int,
     columns: GridCells,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDateSelected: (Int) -> Unit
 ) {
+    val daysWithEntries by remember(currentYear, selectedMonth) {
+        mutableStateOf(getDaysWithEntriesForMonth(context, currentYear, selectedMonth))
+    }
+
     LazyVerticalGrid(
         columns = columns,
         modifier = modifier,
@@ -386,22 +530,18 @@ fun CalendarGrid(
         contentPadding = PaddingValues(4.dp)
     ) {
         val daysInMonth = YearMonth.of(currentYear, selectedMonth).lengthOfMonth()
-        val daysWithEntries = setOf(5, 10, 22)
         items(daysInMonth) { dayIndex ->
             val dayOfMonth = dayIndex + 1
             val hasEntry = daysWithEntries.contains(dayOfMonth)
             Card(
                 modifier = Modifier.aspectRatio(1f),
-                onClick = { },
+                onClick = { if (hasEntry) onDateSelected(dayOfMonth) },
                 enabled = hasEntry,
                 colors = CardDefaults.cardColors(
                     containerColor = if (hasEntry) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     Text(
                         text = "$dayOfMonth",
                         style = MaterialTheme.typography.bodyMedium,
@@ -413,61 +553,105 @@ fun CalendarGrid(
     }
 }
 
-// memories card: placeholder for memories content
+
+// memories card: displays entry for the selected date
 @Composable
-fun MemoriesCard(modifier: Modifier = Modifier) {
+fun MemoriesCard(
+    modifier: Modifier = Modifier,
+    context: Context,
+    selectedYear: Int,
+    selectedMonth: Int,
+    selectedDay: Int?
+) {
+    val journalEntry by remember(selectedYear, selectedMonth, selectedDay) {
+        derivedStateOf {
+            selectedDay?.let { day ->
+                readJournalEntryForDate(context, selectedYear, selectedMonth, day)
+            }
+        }
+    }
+
     Card(modifier = modifier) {
+        // Make the content area scrollable if entry is long
+        val scrollState = rememberScrollState()
         Box(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            contentAlignment = Alignment.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(scrollState), // Add scrolling
+            contentAlignment = if (journalEntry == null) Alignment.Center else Alignment.TopStart // Align text top-start
         ) {
-            Text("Memories area", style = MaterialTheme.typography.headlineSmall)
+            if (journalEntry != null) {
+                Text(
+                    text = journalEntry!!,
+                    style = MaterialTheme.typography.bodyLarge
+                    // Removed modifier = Modifier.fillMaxSize() to allow scrolling
+                )
+            } else {
+                Text(
+                    "Select a highlighted date to view the memory.",
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
 
+
 // journal screen layout: input area and ai suggestions
 @Composable
 fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val orientation = configuration.orientation
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf("") } // Text state for the input field
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("click 'prompt' for a suggestion.")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
     val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
 
+    LaunchedEffect(Unit) { // Unit key means this runs once on composition
+        Log.d("JournalScreen", "LaunchedEffect running to load today's entry")
+        val loadedEntry = readTodaysJournalEntry(context)
+        if (loadedEntry != null) {
+            text = loadedEntry // Update the text state if an entry was loaded
+            Log.d("JournalScreen", "Loaded today's entry.")
+        } else {
+            Log.d("JournalScreen", "No entry found for today or error reading.")
+        }
+    }
+
     // journal entry input: lets the user type text
     @Composable
     fun JournalEntryInput(modifier: Modifier = Modifier, showTitle: Boolean = true) {
         Column(modifier = modifier) {
             if (showTitle) {
-                Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Journal Entry", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 8.dp))
             }
             BasicTextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = { text = it }, // Update state on change
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
-                    .defaultMinSize(minHeight = 150.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 decorationBox = { innerTextField ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        if (text.isEmpty()) {
-                            Text("What's on your mind?", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
-                        }
-                        innerTextField()
+                    if (text.isEmpty()) {
+                        Text("What's on your mind?", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                     }
+                    innerTextField()
                 }
             )
         }
     }
 
-    // ai assistance: shows prompt and reflection suggestions
+
+    // ai assistance: shows prompt and reflection suggestions and controls
     @Composable
     fun AiAssistanceAndControls(modifier: Modifier = Modifier) {
         Column(modifier = modifier) {
@@ -493,15 +677,17 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
-                onClick = { saveJournalEntry(text); text = "" },
+                // Use the updated saveJournalEntry - it will overwrite today's file
+                onClick = { saveJournalEntry(context, text) /* Removed text = "" */ },
                 modifier = Modifier.align(Alignment.End),
-                enabled = text.isNotBlank() && !isLoadingPrompt && !isLoadingReflection
+                enabled = /*text.isNotBlank() &&*/ !isLoadingPrompt && !isLoadingReflection // Allow saving empty to clear entry
             ) { Text("Finish Entry") }
         }
     }
 
+    // Layout logic based on screen size/orientation
     when {
-        // tablet landscape: two-pane layout with input and ai controls side by side
+        // tablet landscape: two-pane layout
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
             Row(
                 modifier = Modifier
@@ -509,24 +695,19 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
                     .padding(horizontal = screenPadding + 8.dp, vertical = screenPadding),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                JournalEntryInput(
-                    modifier = Modifier.weight(1.8f).fillMaxHeight(),
-                    showTitle = true
-                )
+                JournalEntryInput(modifier = Modifier.weight(1.8f).fillMaxHeight(), showTitle = true)
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    Spacer(modifier = Modifier.height(MaterialTheme.typography.titleLarge.fontSize.value.dp + 8.dp))
-                    AiAssistanceAndControls()
+                    Spacer(modifier = Modifier.height( MaterialTheme.typography.headlineMedium.fontSize.value.dp + 8.dp))
+                    AiAssistanceAndControls(modifier = Modifier.fillMaxHeight())
                 }
             }
         }
-        // default layout: column with input above ai controls
+        // default layout (tablet portrait, phone): column layout
         else -> {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(screenPadding)
-            ) {
-                JournalEntryInput(modifier = Modifier.weight(1f), showTitle = true)
+            Column(modifier = Modifier.fillMaxSize().padding(screenPadding)) {
+                JournalEntryInput(modifier = Modifier.weight(0.6f).fillMaxWidth(), showTitle = true)
                 Spacer(modifier = Modifier.height(16.dp))
-                AiAssistanceAndControls()
+                AiAssistanceAndControls(modifier = Modifier.weight(0.4f).fillMaxWidth())
             }
         }
     }

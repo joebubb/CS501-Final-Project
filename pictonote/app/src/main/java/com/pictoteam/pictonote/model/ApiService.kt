@@ -29,7 +29,4 @@ interface GeminiApiService {
         @Query("key") apiKey: String,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse
-
-    // --- Add other API endpoints here as needed (e.g., countTokens) ---
-
 }
