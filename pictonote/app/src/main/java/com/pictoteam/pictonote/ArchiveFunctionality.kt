@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter
 
 
 // function to save/overwrite the journal entry for the current date
-fun saveJournalEntry(context: Context, entry: String) {
+fun saveLocalJournalEntry(context: Context, entry: String) {
 if (entry.isBlank()) {
         Log.w("SaveJournalEntry", "Attempted to save an empty entry. Overwriting if exists.")
     }

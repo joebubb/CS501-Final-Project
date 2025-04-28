@@ -14,96 +14,102 @@ class GeminiViewModel : ViewModel() {
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-1.5-flash" // best blend of intelligence and conciseness
 
-    // general api result
-    private val _apiResult = MutableLiveData<String>()
-    val apiResult: LiveData<String> = _apiResult
-
-    // journal prompt variables
-    private val _journalPromptSuggestion = MutableLiveData<String>()
+    // --- LiveData Definitions ---
+    // Journal Prompt
+    private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.") // Initial non-null value
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
 
-    // loading state for prompt generation
     private val _isPromptLoading = MutableLiveData<Boolean>(false)
     val isPromptLoading: LiveData<Boolean> = _isPromptLoading
 
-    // journal reflection variables
-    private val _journalReflection = MutableLiveData<String>()
+    // Journal Reflection
+    private val _journalReflection = MutableLiveData<String>("") // Initial non-null value (empty string)
     val journalReflection: LiveData<String> = _journalReflection
 
-    // loading state for reflection generation
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
     val isReflectionLoading: LiveData<Boolean> = _isReflectionLoading
 
     init {
         Log.d("GeminiViewModel", "ViewModel initialized.")
-        _journalReflection.value = ""
+        // Initial values are set in declaration now
     }
 
+    // --- Refactored Core API Call Function ---
+    /**
+     * Calls the Gemini API with the given text prompt.
+     *
+     * @param promptText The text to send to the Gemini model.
+     * @param callerTag A tag for logging purposes (e.g., "[JournalPrompt]").
+     * @return The generated text content as a String, or null if an error occurred or the response was empty.
+     */
+    private suspend fun generateContentFromPrompt(promptText: String, callerTag: String): String? {
+        Log.d("GeminiViewModel", "$callerTag Coroutine launched. Preparing API call...")
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = promptText))))
+        )
+        Log.d("GeminiViewModel", "$callerTag Request Body Created: $request")
+
+        return try {
+            Log.d("GeminiViewModel", "$callerTag Calling apiService.generateContent...")
+            val response = GeminiApiClient.apiService.generateContent(modelName, geminiApiKey, request)
+            Log.d("GeminiViewModel", "$callerTag API call successful.")
+
+            val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (!generatedText.isNullOrBlank()) {
+                Log.i("GeminiViewModel", "$callerTag Generated Content: $generatedText")
+                generatedText.trim() // Return valid, trimmed text
+            } else {
+                Log.w("GeminiViewModel", "$callerTag Received response, but generated text was null or empty.")
+                Log.d("GeminiViewModel", "$callerTag Full Response: $response")
+                null // Indicate failure (empty content)
+            }
+
+        } catch (e: HttpException) {
+            val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
+            Log.e("GeminiViewModel", "$callerTag HTTP Error: ${e.code()} - ${e.message()}. Body: $errorBody", e)
+            null // Indicate failure (HTTP error)
+        } catch (e: Exception) {
+            Log.e("GeminiViewModel", "$callerTag Generic Error: ${e.message}", e)
+            null // Indicate failure (other error)
+        }
+    }
+
+    // --- Function using the refactored core call ---
     fun suggestJournalPrompt() {
-        // prevent multiple simultaneous requests
         if (_isPromptLoading.value == true) return
 
         _isPromptLoading.value = true
-        _journalPromptSuggestion.value = "Generating prompt suggestion..."
+        // Post the loading message immediately, ensuring it's non-null
+        _journalPromptSuggestion.postValue("Generating prompt suggestion...")
+        val callerTag = "[JournalPrompt]"
 
         viewModelScope.launch {
-            Log.d("GeminiViewModel", "[JournalPrompt] Coroutine launched. Preparing API call...")
             val promptForGemini = "Suggest a thoughtful and inspiring journal prompt suitable for self-reflection."
-            val request = GenerateContentRequest(
-                contents = listOf(Content(parts = listOf(Part(text = promptForGemini))))
-            )
-            Log.d("GeminiViewModel", "[JournalPrompt] Request Body Created: $request")
+            val generatedPrompt = generateContentFromPrompt(promptForGemini, callerTag)
 
-            try {
-                // make the api call
-                Log.d("GeminiViewModel", "[JournalPrompt] Calling apiService.generateContent...")
-                val response = GeminiApiClient.apiService.generateContent(modelName, geminiApiKey, request)
-                Log.d("GeminiViewModel", "[JournalPrompt] API call successful.")
+            // Use the result if not null, otherwise post a specific error message. Both paths post non-null.
+            val messageToPost = generatedPrompt ?: "Error fetching prompt suggestion."
+            _journalPromptSuggestion.postValue(messageToPost)
 
-                // process the response
-                val generatedPrompt = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                if (!generatedPrompt.isNullOrBlank()) {
-                    Log.i("GeminiViewModel", "[JournalPrompt] Generated Prompt Suggestion: $generatedPrompt")
-                    _journalPromptSuggestion.postValue(generatedPrompt.trim())
-                } else {
-                    // handle empty response
-                    Log.w("GeminiViewModel", "[JournalPrompt] Received response, but prompt text was null or empty.")
-                    Log.d("GeminiViewModel", "[JournalPrompt] Full Response: $response")
-                    _journalPromptSuggestion.postValue("Could not generate a prompt suggestion.")
-                }
-
-            } catch (e: HttpException) {
-                // handle http errors
-                val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
-                Log.e("GeminiViewModel", "[JournalPrompt] HTTP Error: ${e.code()} - ${e.message()}. Body: $errorBody", e)
-                _journalPromptSuggestion.postValue("Error fetching prompt: HTTP ${e.code()}.")
-
-            } catch (e: Exception) {
-                // handle general errors
-                Log.e("GeminiViewModel", "[JournalPrompt] Generic Error: ${e.message}", e)
-                _journalPromptSuggestion.postValue("Error fetching prompt: ${e.message}")
-            } finally {
-                // reset loading state
-                _isPromptLoading.postValue(false)
-            }
+            _isPromptLoading.postValue(false)
         }
     }
 
+    // --- Function using the refactored core call ---
     fun reflectOnJournalEntry(journalEntry: String) {
-        // verify input is not empty
         if (journalEntry.isBlank()) {
-            _journalReflection.value = "Please write something before asking for a reflection."
+            // Ensure non-null post
+            _journalReflection.postValue("Please write something before asking for a reflection.")
             return
         }
-        // prevent multiple simultaneous requests
         if (_isReflectionLoading.value == true) return
 
         _isReflectionLoading.value = true
-        _journalReflection.value = "Generating reflection..."
+        // Post the loading message immediately, ensuring it's non-null
+        _journalReflection.postValue("Generating reflection...")
+        val callerTag = "[JournalReflection]"
 
         viewModelScope.launch {
-            Log.d("GeminiViewModel", "[JournalReflection] Coroutine launched. Preparing API call...")
-            // create prompt with user's journal entry
             val promptForGemini = """
             Please reflect on the following journal entry. Provide some thoughtful insights, questions to consider, or a brief summary of the potential themes or emotions expressed. Keep the reflection concise.
 
@@ -115,43 +121,17 @@ class GeminiViewModel : ViewModel() {
             Reflection:
             """.trimIndent()
 
-            val request = GenerateContentRequest(
-                contents = listOf(Content(parts = listOf(Part(text = promptForGemini))))
-            )
-            Log.d("GeminiViewModel", "[JournalReflection] Request Body Created: $request")
+            val generatedReflection = generateContentFromPrompt(promptForGemini, callerTag)
 
-            try {
-                // make the api call
-                Log.d("GeminiViewModel", "[JournalReflection] Calling apiService.generateContent...")
-                val response = GeminiApiClient.apiService.generateContent(modelName, geminiApiKey, request)
-                Log.d("GeminiViewModel", "[JournalReflection] API call successful.")
+            // Use the result if not null, otherwise post a specific error message. Both paths post non-null.
+            val messageToPost = generatedReflection ?: "Error generating reflection for this entry."
+            _journalReflection.postValue(messageToPost)
 
-                // process the response
-                val generatedReflection = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                if (!generatedReflection.isNullOrBlank()) {
-                    Log.i("GeminiViewModel", "[JournalReflection] Generated Reflection: $generatedReflection")
-                    _journalReflection.postValue(generatedReflection.trim())
-                } else {
-                    // handle empty response
-                    Log.w("GeminiViewModel", "[JournalReflection] Received response, but reflection text was null or empty.")
-                    Log.d("GeminiViewModel", "[JournalReflection] Full Response: $response")
-                    _journalReflection.postValue("Could not generate a reflection for this entry.")
-                }
-
-            } catch (e: HttpException) {
-                // handle http errors
-                val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
-                Log.e("GeminiViewModel", "[JournalReflection] HTTP Error: ${e.code()} - ${e.message()}. Body: $errorBody", e)
-                _journalReflection.postValue("Error generating reflection: HTTP ${e.code()}.")
-
-            } catch (e: Exception) {
-                // handle general errors
-                Log.e("GeminiViewModel", "[JournalReflection] Generic Error: ${e.message}", e)
-                _journalReflection.postValue("Error generating reflection: ${e.message}")
-            } finally {
-                // reset loading state
-                _isReflectionLoading.postValue(false)
-            }
+            _isReflectionLoading.postValue(false)
         }
     }
+
+    // Optional: Keep _apiResult if needed, ensure non-null posting if used
+    private val _apiResult = MutableLiveData<String>("") // Example initial value
+    val apiResult: LiveData<String> = _apiResult
 }

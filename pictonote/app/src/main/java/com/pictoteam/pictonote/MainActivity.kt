@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-// Removed unused sp import
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -606,37 +605,37 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val orientation = configuration.orientation
-    var text by remember { mutableStateOf("") } // Text state for the input field
+    var text by remember { mutableStateOf("") }
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("click 'prompt' for a suggestion.")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
     val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
 
-    LaunchedEffect(Unit) { // Unit key means this runs once on composition
+    LaunchedEffect(Unit) {
         Log.d("JournalScreen", "LaunchedEffect running to load today's entry")
         val loadedEntry = readTodaysJournalEntry(context)
         if (loadedEntry != null) {
-            text = loadedEntry // Update the text state if an entry was loaded
+            text = loadedEntry
             Log.d("JournalScreen", "Loaded today's entry.")
         } else {
             Log.d("JournalScreen", "No entry found for today or error reading.")
         }
     }
 
-    // journal entry input: lets the user type text
+    // --- Journal Entry Input: BasicTextField should fill available height ---
     @Composable
     fun JournalEntryInput(modifier: Modifier = Modifier, showTitle: Boolean = true) {
-        Column(modifier = modifier) {
+        Column(modifier = modifier) { // Takes modifier from parent (which includes weight)
             if (showTitle) {
                 Text("Journal Entry", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 8.dp))
             }
             BasicTextField(
                 value = text,
-                onValueChange = { text = it }, // Update state on change
+                onValueChange = { text = it },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                    // CHANGE: Use fillMaxSize() to occupy the weighted space given to JournalEntryInput
+                    .fillMaxSize()
                     .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -650,44 +649,49 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
         }
     }
 
-
-    // ai assistance: shows prompt and reflection suggestions and controls
+    // --- AI Assistance: Added internal scrolling ---
     @Composable
     fun AiAssistanceAndControls(modifier: Modifier = Modifier) {
+        // This outer Column takes the modifier passed from the parent layout
         Column(modifier = modifier) {
-            Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-            SuggestionCard(promptSuggestion, isLoadingPrompt)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Reflection:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-            ReflectionCard(text, reflectionResult, isLoadingReflection)
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            // Make the content *inside* this section scrollable if needed
+            val scrollState = rememberScrollState()
+            Column(modifier = Modifier.verticalScroll(scrollState)) {
+                Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+                SuggestionCard(promptSuggestion, isLoadingPrompt)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Reflection:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+                ReflectionCard(text, reflectionResult, isLoadingReflection)
+                Spacer(modifier = Modifier.height(24.dp)) // Space before buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { geminiViewModel.suggestJournalPrompt() },
+                        enabled = !isLoadingPrompt && !isLoadingReflection
+                    ) { Text("Prompt") }
+                    Button(
+                        onClick = { geminiViewModel.reflectOnJournalEntry(text) },
+                        enabled = !isLoadingReflection && !isLoadingPrompt && text.isNotBlank()
+                    ) { Text("Reflection") }
+                }
+                Spacer(modifier = Modifier.height(16.dp)) // Space before Finish Entry
                 Button(
-                    onClick = { geminiViewModel.suggestJournalPrompt() },
+                    onClick = { saveLocalJournalEntry(context, text) },
+                    modifier = Modifier.align(Alignment.End),
                     enabled = !isLoadingPrompt && !isLoadingReflection
-                ) { Text("Prompt") }
-                Button(
-                    onClick = { geminiViewModel.reflectOnJournalEntry(text) },
-                    enabled = !isLoadingReflection && !isLoadingPrompt && text.isNotBlank()
-                ) { Text("Reflection") }
+                ) { Text("Finish Entry") }
+                // Optional: Add a little space at the very bottom inside the scrollable area
+                Spacer(modifier = Modifier.height(8.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                // Use the updated saveJournalEntry - it will overwrite today's file
-                onClick = { saveJournalEntry(context, text) /* Removed text = "" */ },
-                modifier = Modifier.align(Alignment.End),
-                enabled = /*text.isNotBlank() &&*/ !isLoadingPrompt && !isLoadingReflection // Allow saving empty to clear entry
-            ) { Text("Finish Entry") }
         }
     }
 
     // Layout logic based on screen size/orientation
     when {
-        // tablet landscape: two-pane layout
+        // tablet landscape: two-pane layout (Keep as is)
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
             Row(
                 modifier = Modifier
@@ -695,23 +699,43 @@ fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
                     .padding(horizontal = screenPadding + 8.dp, vertical = screenPadding),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                // Journal input takes more weighted space
                 JournalEntryInput(modifier = Modifier.weight(1.8f).fillMaxHeight(), showTitle = true)
+                // AI controls take less weighted space
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    // Add padding/spacer to align top content if needed, like before
                     Spacer(modifier = Modifier.height( MaterialTheme.typography.headlineMedium.fontSize.value.dp + 8.dp))
+                    // AI controls fill the height allocated by weight, internal scrolling handles overflow if any
                     AiAssistanceAndControls(modifier = Modifier.fillMaxHeight())
                 }
             }
         }
-        // default layout (tablet portrait, phone): column layout
+
+        // --- REVISED: default layout (tablet portrait, phone) ---
         else -> {
-            Column(modifier = Modifier.fillMaxSize().padding(screenPadding)) {
-                JournalEntryInput(modifier = Modifier.weight(0.6f).fillMaxWidth(), showTitle = true)
-                Spacer(modifier = Modifier.height(16.dp))
-                AiAssistanceAndControls(modifier = Modifier.weight(0.4f).fillMaxWidth())
+            // Use a Column that fills the whole screen (respecting scaffold padding)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize() // Fill available space after Scaffold padding
+                    .padding(screenPadding) // Apply overall padding
+            ) {
+                // Journal Entry takes most of the space, weight(1f) makes it flexible
+                JournalEntryInput(
+                    modifier = Modifier
+                        .weight(1f) // Takes up available vertical space
+                        .fillMaxWidth(),
+                    showTitle = true
+                )
+                Spacer(modifier = Modifier.height(16.dp)) // Space between sections
+                // AI Controls take the remaining space. Scrolling is handled *inside* it.
+                AiAssistanceAndControls(
+                    modifier = Modifier.fillMaxWidth() // Takes needed vertical space
+                )
             }
         }
     }
 }
+
 
 // suggestion card: shows prompt suggestion text
 @Composable
