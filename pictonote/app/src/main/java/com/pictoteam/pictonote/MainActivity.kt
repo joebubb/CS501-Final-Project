@@ -1,34 +1,48 @@
 package com.pictoteam.pictonote
 
+import android.Manifest // Ensure Manifest import is present
 import android.content.Context
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Bundle
-import android.util.Log
+import android.util.Log // Import Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.isSystemInDarkTheme // Import for dark theme check
+import androidx.compose.foundation.layout.* // Includes WindowInsets, padding, etc.
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.* // Import all filled icons used
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color // Import Color for transparent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat // Import WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -36,12 +50,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.pictoteam.pictonote.composables.SettingsScreen
+import coil3.compose.rememberAsyncImagePainter // Make sure Coil import is correct (might be coil3.compose)
+import com.google.accompanist.systemuicontroller.rememberSystemUiController // Import Accompanist
+import com.pictoteam.pictonote.composables.SettingsScreen // Ensure SettingsScreen is imported if used directly
 import com.pictoteam.pictonote.model.GeminiViewModel
-import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
+import com.pictoteam.pictonote.model.IMAGE_URI_MARKER
+import com.pictoteam.pictonote.model.JournalViewModel
 import com.pictoteam.pictonote.model.SettingsViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -49,73 +65,104 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
-import java.util.Locale
+import java.util.*
 import kotlin.math.roundToInt
 
-const val JOURNAL_DIR = "journal_entries"
-val filenameDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-// main activity: entry point of the app
+const val JOURNAL_DIR = "journal_entries"
+val filenameDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // *** Enable Edge-to-Edge display ***
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         setContent {
-            // get app settings from the view model
             val settingsViewModel: SettingsViewModel = viewModel()
             val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
 
-            // apply theme and launch main ui layout
             PictoNoteTheme(
                 darkTheme = settings.isDarkMode,
                 baseFontSize = settings.baseFontSize
             ) {
+                // Apply edge-to-edge adjustments globally here
+                ApplyEdgeToEdge()
+                // Render the main app structure
                 PictoNoteApp()
             }
         }
     }
 }
 
-// main ui layout that handles overall scaffold and navigation
+// Helper composable to configure system bars for edge-to-edge
+@Composable
+private fun ApplyEdgeToEdge() {
+    val systemUiController = rememberSystemUiController()
+    val useDarkIcons = !isSystemInDarkTheme() // Determine icon color based on system theme
+
+    // Apply system bar settings using DisposableEffect
+    DisposableEffect(systemUiController, useDarkIcons) {
+        systemUiController.setStatusBarColor(
+            color = Color.Transparent, // Make status bar transparent
+            darkIcons = useDarkIcons   // Set status bar icon colors
+        )
+
+        systemUiController.setNavigationBarColor(
+            color = Color.Transparent, // Make navigation bar transparent
+            darkIcons = useDarkIcons   // Set navigation bar icon colors
+        )
+
+        onDispose { } // No specific cleanup needed in this case
+    }
+}
+
 @Composable
 fun PictoNoteApp() {
     val navController = rememberNavController()
     Scaffold(
+        // Bottom Navigation Bar remains consistent
         bottomBar = { BottomNavigationBar(navController) }
-    ) { paddingValues ->
-        // apply scaffold padding to the content
-        Box(modifier = Modifier.padding(paddingValues)) {
+    ) { innerPadding -> // innerPadding contains safe areas from system bars
+        // This allows content like the camera preview to go under the status bar.
+        val bottomPadding = innerPadding.calculateBottomPadding()
+
+        Box(modifier = Modifier.padding(bottom = bottomPadding)) {
+            // The NavigationGraph content will now respect only the bottom padding.
+            // Individual screens need to handle status bar padding if they shouldn't overlap.
             NavigationGraph(navController = navController)
         }
     }
 }
 
-// bottom navigation bar to switch between screens
+// Bottom navigation bar - No changes needed
 @Composable
 fun BottomNavigationBar(navController: NavHostController) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
-    NavigationBar {
+    NavigationBar { // Material 3 NavigationBar
         NavigationBarItem(
-            icon = { Icon(Icons.Default.AccountBox, contentDescription = null) },
+            icon = { Icon(Icons.Default.AccountBox, contentDescription = "Archive") },
             label = { Text("Archive") },
             selected = currentRoute == "archive",
             onClick = { navigateTo(navController, "archive") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Default.Home, contentDescription = null) },
+            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
             label = { Text("Home") },
             selected = currentRoute == "home",
             onClick = { navigateTo(navController, "home") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
+            icon = { Icon(Icons.Default.Favorite, contentDescription = "Journal") },
             label = { Text("Journal") },
             selected = currentRoute == "journal",
             onClick = { navigateTo(navController, "journal") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
             label = { Text("Settings") },
             selected = currentRoute == "settings",
             onClick = { navigateTo(navController, "settings") }
@@ -123,7 +170,7 @@ fun BottomNavigationBar(navController: NavHostController) {
     }
 }
 
-// helper to navigate between screens
+// Navigation helper - No changes needed
 private fun navigateTo(navController: NavHostController, route: String) {
     if (navController.currentDestination?.route != route) {
         navController.navigate(route) {
@@ -134,18 +181,18 @@ private fun navigateTo(navController: NavHostController, route: String) {
     }
 }
 
-// navigation graph defining routes and corresponding screens
+// Navigation graph - No changes needed
 @Composable
 fun NavigationGraph(navController: NavHostController) {
     NavHost(navController, startDestination = "home") {
         composable("home") { HomeScreen() }
         composable("archive") { ArchiveScreen() }
         composable("journal") { JournalScreen() }
-        composable("settings") { SettingsScreen() }
+        composable("settings") { SettingsScreen() } // Make sure SettingsScreen composable exists
     }
 }
 
-// home screen ui layout: adapts to screen size and orientation
+// Home screen - Added status bar padding
 @Composable
 fun HomeScreen() {
     val configuration = LocalConfiguration.current
@@ -154,66 +201,56 @@ fun HomeScreen() {
 
     val commonCardModifier = Modifier.padding(vertical = 8.dp)
     val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
-    val landscapeHorizontalPadding = if (orientation == Configuration.ORIENTATION_LANDSCAPE) screenPadding + 8.dp else screenPadding
+
+    // *** Apply statusBarsPadding() to the top-level layout for this screen ***
+    val topLevelModifier = Modifier
+        .fillMaxSize()
+        .statusBarsPadding() // Ensure content is below the status bar
+        .padding(horizontal = screenPadding) // Apply horizontal padding
+
+    // Apply vertical padding after status bar padding
+    val contentModifier = topLevelModifier.padding(vertical = screenPadding)
 
     when {
-        // tablet landscape layout: two columns
+        // tablet landscape layout
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
-            Column(modifier = Modifier.padding(screenPadding)) {
+            Column(modifier = contentModifier) { // Use modifier with all padding
                 Text("Home Page", style = MaterialTheme.typography.headlineMedium)
-
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = landscapeHorizontalPadding, vertical = screenPadding),
+                        .padding(vertical = 0.dp), // Row might not need extra vertical padding
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     verticalAlignment = Alignment.Top
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        // show streak card with full width
+                        Spacer(modifier = Modifier.height(16.dp)) // Adjust spacing as needed
                         StreakCard(modifier = commonCardModifier.fillMaxWidth(), screenWidthDp = screenWidthDp)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        // extra space for alignment in tablet layout
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(16.dp)) // Adjust spacing as needed
                         RemindersCard(modifier = commonCardModifier.fillMaxWidth())
                     }
                 }
             }
-
         }
-        // tablet portrait layout: column layout
-        screenWidthDp >= 600 -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = screenPadding, vertical = screenPadding),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("Home Page", style = MaterialTheme.typography.headlineMedium)
-                Spacer(modifier = Modifier.height(20.dp))
-                StreakCard(modifier = commonCardModifier.fillMaxWidth(), screenWidthDp = screenWidthDp)
-                Spacer(modifier = Modifier.height(16.dp))
-                RemindersCard(modifier = commonCardModifier.fillMaxWidth())
-            }
-        }
-        // phone layout: column layout with constrained width
+        // tablet portrait / phone layout
         else -> {
             Column(
-                modifier = Modifier.fillMaxSize().padding(screenPadding),
+                modifier = contentModifier, // Use modifier with all padding
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Home Page", style = MaterialTheme.typography.headlineMedium)
-                StreakCard(modifier = commonCardModifier.fillMaxWidth(0.9f), screenWidthDp = screenWidthDp)
-                RemindersCard(modifier = commonCardModifier.fillMaxWidth(0.9f))
+                StreakCard(modifier = commonCardModifier.fillMaxWidth(if (screenWidthDp < 600) 0.9f else 1f), screenWidthDp = screenWidthDp)
+                RemindersCard(modifier = commonCardModifier.fillMaxWidth(if (screenWidthDp < 600) 0.9f else 1f))
             }
         }
     }
 }
 
-// streak card: shows weekly progress
+
+// Streak Card - No functional changes needed for edge-to-edge
 @Composable
 fun StreakCard(
     modifier: Modifier = Modifier,
@@ -238,18 +275,16 @@ fun StreakCard(
             val boxSize = if (isTablet) 56.dp else 36.dp
             val spacing = if (isTablet) 12.dp else 4.dp
 
-            // display days of week with completion status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
-                // Placeholder - Replace with logic checking actual entries for the past week
                 val completedDaysIndices = remember { getDaysWithEntriesForPastWeek(context) }
 
                 daysOfWeek.forEachIndexed { index, day ->
-                    val isCompleted = completedDaysIndices.contains(index) // Simple check for demo
+                    val isCompleted = completedDaysIndices.contains(index)
                     Box(
                         modifier = Modifier
                             .size(boxSize)
@@ -273,8 +308,8 @@ fun StreakCard(
     }
 }
 
+// Helper function - No changes needed
 fun getDaysWithEntriesForPastWeek(context: Context): Set<Int> {
-    Log.w("StreakCard", "getDaysWithEntriesForPastWeek needs full implementation")
     val today = LocalDate.now()
     val pastWeekIndices = mutableSetOf<Int>()
     val directory = File(context.filesDir, JOURNAL_DIR)
@@ -286,8 +321,7 @@ fun getDaysWithEntriesForPastWeek(context: Context): Set<Int> {
         val dateString = date.format(filenameDateFormatter)
         val filename = "journal_$dateString.txt"
         if (File(directory, filename).exists()) {
-
-            val dayOfWeekIndex = (date.dayOfWeek.value % 7) // Sunday (7) -> 0, Monday (1) -> 1 ... Saturday (6) -> 6
+            val dayOfWeekIndex = date.dayOfWeek.value % 7
             pastWeekIndices.add(dayOfWeekIndex)
         }
     }
@@ -295,37 +329,30 @@ fun getDaysWithEntriesForPastWeek(context: Context): Set<Int> {
     return pastWeekIndices
 }
 
-
-// reminders card: shows notification setup
+// Reminders Card - No functional changes needed for edge-to-edge
 @Composable
 fun RemindersCard(modifier: Modifier = Modifier) {
     Card(modifier = modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Reminders", style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.height(8.dp))
-            // simple button for push notifications setup
-            Button(onClick = { /* TODO: Implement notification setup navigation/logic */ }) {
+            Button(onClick = { /* TODO: Notification setup */ }) {
                 Text("Set Up Push Notifications")
             }
         }
     }
 }
 
-// reads journal entries directory and returns set of days with entries for the given month/year
+// Helper function - No changes needed
 fun getDaysWithEntriesForMonth(context: Context, year: Int, month: Int): Set<Int> {
     val days = mutableSetOf<Int>()
     val directory = File(context.filesDir, JOURNAL_DIR)
-    if (!directory.exists() || !directory.isDirectory) {
-        return emptySet()
-    }
+    if (!directory.exists() || !directory.isDirectory) return emptySet()
 
-    val monthPrefix = String.format("%d-%02d", year, month) // e.g., "2024-07"
-
+    val monthPrefix = String.format("%d-%02d", year, month)
     directory.listFiles()?.forEach { file ->
-        // Check filename format: journal_YYYY-MM-DD.txt
         if (file.isFile && file.name.startsWith("journal_$monthPrefix") && file.name.endsWith(".txt")) {
             try {
-                // Extract date part: journal_yyyy-MM-dd.txt -> yyyy-MM-dd
                 val dateString = file.name.substringAfter("journal_").substringBefore(".txt")
                 val date = LocalDate.parse(dateString, filenameDateFormatter)
                 if (date.year == year && date.monthValue == month) {
@@ -340,57 +367,49 @@ fun getDaysWithEntriesForMonth(context: Context, year: Int, month: Int): Set<Int
     return days
 }
 
-// reads the content of the journal entry for a specific date
-fun readJournalEntryForDate(context: Context, year: Int, month: Int, day: Int): String {
+// Helper function - No changes needed (reading logic remains the same)
+fun readJournalEntryForDate(context: Context, year: Int, month: Int, day: Int): Pair<String?, String?> {
     val directory = File(context.filesDir, JOURNAL_DIR)
     val dateString = String.format("%d-%02d-%02d", year, month, day)
     val filename = "journal_$dateString.txt"
     val entryFile = File(directory, filename)
 
-    return try {
+    var imagePath: String? = null
+    var textContent: String? = null
+
+    try {
         if (entryFile.exists() && entryFile.isFile) {
-            entryFile.readText()
+            val fullContent = entryFile.readText()
+            val firstLine = fullContent.lines().firstOrNull()
+            if (firstLine != null && firstLine.startsWith(IMAGE_URI_MARKER)) {
+                imagePath = firstLine.substringAfter(IMAGE_URI_MARKER).trim()
+                textContent = fullContent.lines().drop(1).joinToString("\n")
+                Log.d("ReadJournalEntry", "Found entry with image: $imagePath")
+            } else {
+                textContent = fullContent
+                Log.d("ReadJournalEntry", "Found entry without image.")
+            }
         } else {
-            "No entry found for this date." // Or return null if preferred
+            Log.w("ReadJournalEntry", "No entry file found for $dateString")
+            return Pair(null, null)
         }
     } catch (e: FileNotFoundException) {
         Log.e("ReadJournalEntry", "File not found: ${entryFile.absolutePath}", e)
-        "Error reading entry: File not found."
-    } catch (e: IOException) {
+        return Pair(null, null)
+    }
+    catch (e: IOException) {
         Log.e("ReadJournalEntry", "IOException reading entry: ${entryFile.absolutePath}", e)
-        "Error reading entry: IO Exception."
-    } catch (e: Exception) {
-        Log.e("ReadJournalEntry", "Unexpected error reading entry: ${entryFile.absolutePath}", e)
-        "An unexpected error occurred."
+        return Pair(null, null)
     }
-}
-
-// --- New Helper to read TODAY's entry ---
-// reads the content of today's journal entry, returns null if not found or error
-suspend fun readTodaysJournalEntry(context: Context): String? {
-    return withContext(Dispatchers.IO) { // Perform file IO off the main thread
-        val directory = File(context.filesDir, JOURNAL_DIR)
-        val todayDateString = LocalDate.now().format(filenameDateFormatter)
-        val filename = "journal_$todayDateString.txt"
-        val entryFile = File(directory, filename)
-
-        try {
-            if (entryFile.exists() && entryFile.isFile) {
-                Log.d("ReadToday", "Found today's entry: $filename")
-                entryFile.readText()
-            } else {
-                Log.d("ReadToday", "No entry file found for today: $filename")
-                null // No entry found for today
-            }
-        } catch (e: Exception) {
-            Log.e("ReadToday", "Error reading today's journal entry: ${entryFile.absolutePath}", e)
-            null // Return null on error
-        }
+    catch (e: Exception) {
+        Log.e("ReadJournalEntry", "Unexpected error reading entry file: ${entryFile.absolutePath}", e)
+        return Pair(null, null)
     }
+    return Pair(imagePath, textContent)
 }
 
 
-// archive screen layout: calendar and memories
+// Archive screen - Added status bar padding
 @Composable
 fun ArchiveScreen() {
     val context = LocalContext.current
@@ -399,24 +418,32 @@ fun ArchiveScreen() {
     val orientation = configuration.orientation
 
     var selectedMonth by remember { mutableStateOf(YearMonth.now().monthValue) }
-    val currentYear = YearMonth.now().year // Keep focus on current year for simplicity
+    val currentYear = YearMonth.now().year
     var selectedDay by remember { mutableStateOf<Int?>(null) }
 
     val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
+
+    // *** Apply statusBarsPadding() to the top-level layout for this screen ***
+    val topLevelModifier = Modifier
+        .fillMaxSize()
+        .statusBarsPadding() // Ensure content is below the status bar
+        .padding(horizontal = screenPadding) // Apply horizontal padding
+
+    // Apply vertical padding after status bar padding
+    val contentModifier = topLevelModifier.padding(vertical = screenPadding)
 
     LaunchedEffect(selectedMonth) {
         selectedDay = null // Reset day when month changes
     }
 
     when {
-        // tablet landscape: calendar and memories side by side
+        // tablet landscape layout
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = screenPadding + 8.dp, vertical = screenPadding),
+                modifier = contentModifier, // Use modifier with all padding
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                // Left Column (Calendar)
                 Column(modifier = Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         "Calendar - $currentYear",
@@ -433,10 +460,15 @@ fun ArchiveScreen() {
                         onDateSelected = { day -> selectedDay = day }
                     )
                 }
-                Column(modifier = Modifier.weight(1f).padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                // Right Column (Memories) - Adjust top padding to align visually
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = (MaterialTheme.typography.headlineMedium.fontSize.value.dp + 16.dp)), // Approximate alignment
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     MemoriesCard(
-                        modifier = Modifier.fillMaxSize()
-                            .padding(top = (MaterialTheme.typography.headlineMedium.fontSize.value.dp + 16.dp)),
+                        modifier = Modifier.fillMaxSize(),
                         context = context,
                         selectedYear = currentYear,
                         selectedMonth = selectedMonth,
@@ -449,7 +481,7 @@ fun ArchiveScreen() {
         else -> {
             val gridColumns = if (screenWidthDp >= 600) GridCells.Adaptive(minSize = 70.dp) else GridCells.Fixed(7)
             Column(
-                modifier = Modifier.fillMaxSize().padding(screenPadding),
+                modifier = contentModifier, // Use modifier with all padding
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
@@ -478,7 +510,7 @@ fun ArchiveScreen() {
     }
 }
 
-// month selector row: shows buttons for each month
+// Month Selector Row - No changes needed
 @Composable
 fun MonthSelectorRow(
     currentYear: Int,
@@ -492,7 +524,8 @@ fun MonthSelectorRow(
     ) {
         items(12) { monthIndex ->
             val monthValue = monthIndex + 1
-            val monthName = YearMonth.of(currentYear, monthValue).month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+            val month = YearMonth.of(currentYear, monthValue).month
+            val monthName = month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
             Button(
                 onClick = { onMonthSelected(monthValue) },
                 shape = MaterialTheme.shapes.medium,
@@ -500,14 +533,12 @@ fun MonthSelectorRow(
                     containerColor = if (selectedMonth == monthValue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = if (selectedMonth == monthValue) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            ) {
-                Text(monthName)
-            }
+            ) { Text(monthName) }
         }
     }
 }
 
-// calendar grid: displays days in the selected month
+// Calendar Grid - No changes needed
 @Composable
 fun CalendarGrid(
     context: Context,
@@ -537,7 +568,7 @@ fun CalendarGrid(
                 onClick = { if (hasEntry) onDateSelected(dayOfMonth) },
                 enabled = hasEntry,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (hasEntry) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = if (hasEntry) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                 )
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -552,8 +583,7 @@ fun CalendarGrid(
     }
 }
 
-
-// memories card: displays entry for the selected date
+// Memories Card - No changes needed
 @Composable
 fun MemoriesCard(
     modifier: Modifier = Modifier,
@@ -562,226 +592,302 @@ fun MemoriesCard(
     selectedMonth: Int,
     selectedDay: Int?
 ) {
-    val journalEntry by remember(selectedYear, selectedMonth, selectedDay) {
-        derivedStateOf {
-            selectedDay?.let { day ->
-                readJournalEntryForDate(context, selectedYear, selectedMonth, day)
-            }
-        }
+    val (imagePath, journalText) = remember(selectedYear, selectedMonth, selectedDay) {
+        selectedDay?.let { readJournalEntryForDate(context, selectedYear, selectedMonth, it) } ?: Pair(null, null)
+    }
+    val imageFile: File? = remember(imagePath) {
+        imagePath?.takeIf { it.isNotBlank() }?.let { File(context.filesDir, it) }
     }
 
-    Card(modifier = modifier) {
-        // Make the content area scrollable if entry is long
+    Card(modifier = modifier.fillMaxSize()) {
         val scrollState = rememberScrollState()
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(scrollState), // Add scrolling
-            contentAlignment = if (journalEntry == null) Alignment.Center else Alignment.TopStart // Align text top-start
+                .verticalScroll(scrollState)
         ) {
-            if (journalEntry != null) {
-                Text(
-                    text = journalEntry!!,
-                    style = MaterialTheme.typography.bodyLarge
-                    // Removed modifier = Modifier.fillMaxSize() to allow scrolling
+            if (selectedDay == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Select a highlighted date to view the memory.", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                }
+            } else if (imageFile != null && imageFile.exists()) {
+                Image(
+                    painter = rememberAsyncImagePainter(imageFile),
+                    contentDescription = "Journal image for $selectedMonth/$selectedDay/$selectedYear",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(bottom = 12.dp)
                 )
+                if (!journalText.isNullOrBlank()) {
+                    Text(text = journalText, style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    Text("Image captured on this date.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else if (!journalText.isNullOrBlank()) {
+                Text(text = journalText, style = MaterialTheme.typography.bodyLarge)
             } else {
-                Text(
-                    "Select a highlighted date to view the memory.",
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center
-                )
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No content found for this date.", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
 }
 
 
-// journal screen layout: input area and ai suggestions
+// --- JournalScreen with Edge-to-Edge Camera and Debugging Logs ---
 @Composable
-fun JournalScreen(geminiViewModel: GeminiViewModel = viewModel()) {
+fun JournalScreen(
+    journalViewModel: JournalViewModel = viewModel(),
+    geminiViewModel: GeminiViewModel = viewModel()
+) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp
-    val orientation = configuration.orientation
-    var text by remember { mutableStateOf("") }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // State from ViewModel
+    val capturedImageUri by journalViewModel.capturedImageUri.collectAsStateWithLifecycle()
+    var journalText by journalViewModel.journalText
+    val isSaving by journalViewModel.isSaving.collectAsStateWithLifecycle()
+
+    // AI State
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("click 'prompt' for a suggestion.")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
-    val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
 
-    LaunchedEffect(Unit) {
-        Log.d("JournalScreen", "LaunchedEffect running to load today's entry")
-        val loadedEntry = readTodaysJournalEntry(context)
-        if (loadedEntry != null) {
-            text = loadedEntry
-            Log.d("JournalScreen", "Loaded today's entry.")
-        } else {
-            Log.d("JournalScreen", "No entry found for today or error reading.")
+    // CameraX related state
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    var cameraProvider: ProcessCameraProvider? by remember { mutableStateOf(null) }
+    val previewView = remember { PreviewView(context).apply {
+        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        scaleType = PreviewView.ScaleType.FILL_CENTER
+    }}
+    val imageCapture: ImageCapture = remember { ImageCapture.Builder().build() }
+    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+    // Permission handling
+    var hasCamPermission by remember { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted ->
+            hasCamPermission = granted
+            if (!granted) Log.w("JournalScreen", "Camera permission denied.")
+            else Log.d("JournalScreen", "Camera permission granted.") // Log grant
+        }
+    )
+
+    // Request permission & load entry on launch
+    LaunchedEffect(key1 = Unit) {
+        Log.d("JournalScreen", "Initial LaunchedEffect: Requesting permission and loading entry.")
+        launcher.launch(Manifest.permission.CAMERA)
+        journalViewModel.loadTodaysEntry(context)
+    }
+
+    // Effect to get CameraProvider instance ONCE when the composable enters
+    LaunchedEffect(key1 = lifecycleOwner) { // Use lifecycleOwner to run once per lifecycle
+        Log.d("JournalScreen", "LaunchedEffect to get CameraProvider instance...")
+        try {
+            val provider = cameraProviderFuture.get() // Attempt to get it synchronously first (might work if already initialized)
+            cameraProvider = provider
+            Log.d("JournalScreen", "CameraProvider obtained synchronously in LaunchedEffect.")
+        } catch (e: Exception) {
+            // If sync fails, rely on the listener
+            Log.d("JournalScreen", "CameraProvider not ready synchronously, relying on listener.")
+            if (cameraProvider == null) { // Add listener only if still null
+                cameraProviderFuture.addListener({
+                    cameraProvider = try { cameraProviderFuture.get() } catch (e: Exception) { null }
+                    if (cameraProvider != null) {
+                        Log.d("JournalScreen", "CameraProvider obtained via listener.")
+                    } else {
+                        Log.e("JournalScreen", "Failed to get CameraProvider from listener.", e)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            }
         }
     }
 
-    // --- Journal Entry Input: BasicTextField should fill available height ---
-    @Composable
-    fun JournalEntryInput(modifier: Modifier = Modifier, showTitle: Boolean = true) {
-        Column(modifier = modifier) { // Takes modifier from parent (which includes weight)
-            if (showTitle) {
-                Text("Journal Entry", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 8.dp))
+
+    // Bind CameraX use cases WHEN provider and permission are ready
+    LaunchedEffect(cameraProvider, hasCamPermission) {
+        Log.d("JournalScreen", "Binding Effect Check: HasPerm=$hasCamPermission, Provider set=${cameraProvider != null}")
+        if (hasCamPermission && cameraProvider != null) {
+            try {
+                // It's crucial to unbind before binding again
+                Log.d("JournalScreen", "Unbinding all previous use cases...")
+                cameraProvider?.unbindAll()
+
+                Log.d("JournalScreen", "Binding new use cases...")
+                cameraProvider?.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) },
+                    imageCapture
+                )
+                Log.d("JournalScreen", "CameraX successfully bound to lifecycle.")
+            } catch (exc: Exception) {
+                Log.e("JournalScreen", "Use case binding failed", exc)
             }
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
+        }
+    }
+
+    // *** ADD LOGGING HERE TO SEE STATE DURING COMPOSITION ***
+    Log.d("JournalScreen", "Composing UI. HasPerm: $hasCamPermission, Provider: $cameraProvider, IsSaving: $isSaving, Button Enabled: ${cameraProvider != null && !isSaving}")
+
+    // Determine screen content
+    if (capturedImageUri == null && hasCamPermission) {
+        // --- Camera Preview View ---
+        Box(modifier = Modifier.fillMaxSize()) { // Fills edge-to-edge
+            // Using AndroidView ensures PreviewView lifecycle integration
+            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+
+            // Capture Button
+            Button(
+                onClick = {
+                    // Log state again right before attempting the action
+                    Log.d("JournalScreen", "Capture button clicked. Provider ready: ${cameraProvider != null}, Not Saving: ${!isSaving}")
+                    if (cameraProvider != null && !isSaving) {
+                        takePhoto(context, imageCapture, journalViewModel::onImageCaptured)
+                    } else {
+                        Log.w("JournalScreen", "Button click ignored. Provider: $cameraProvider, Saving: $isSaving")
+                    }
+                },
                 modifier = Modifier
-                    // CHANGE: Use fillMaxSize() to occupy the weighted space given to JournalEntryInput
-                    .fillMaxSize()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp)
+                    .navigationBarsPadding() // Pad for system nav bar
+                    .size(72.dp),
+                shape = CircleShape,
+                // The crucial state check for enabling the button
+                enabled = cameraProvider != null && !isSaving
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Take Photo", modifier = Modifier.size(36.dp))
+            }
+        }
+    } else if (capturedImageUri != null) {
+        // --- Entry Editing View ---
+        // (Rest of the code for the editing view remains the same)
+        val configuration = LocalConfiguration.current
+        val screenWidthDp = configuration.screenWidthDp
+        val screenPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = screenPadding) // Horizontal padding
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.statusBarsPadding()) // Push content below status bar
+
+            Image(
+                painter = rememberAsyncImagePainter(capturedImageUri),
+                contentDescription = "Captured journal image",
+                modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).padding(bottom = 16.dp)
+            )
+            Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+            BasicTextField(
+                value = journalText,
+                onValueChange = { journalText = it },
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 150.dp).border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium).padding(horizontal = 16.dp, vertical = 12.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 decorationBox = { innerTextField ->
-                    if (text.isEmpty()) {
-                        Text("What's on your mind?", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
-                    }
+                    if (journalText.isEmpty()) Text("Add your thoughts...", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                     innerTextField()
                 }
             )
-        }
-    }
-
-    // --- AI Assistance: Added internal scrolling ---
-    @Composable
-    fun AiAssistanceAndControls(modifier: Modifier = Modifier) {
-        // This outer Column takes the modifier passed from the parent layout
-        Column(modifier = modifier) {
-            // Make the content *inside* this section scrollable if needed
-            val scrollState = rememberScrollState()
-            Column(modifier = Modifier.verticalScroll(scrollState)) {
-                Text("Suggestion:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-                SuggestionCard(promptSuggestion, isLoadingPrompt)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Reflection:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
-                ReflectionCard(text, reflectionResult, isLoadingReflection)
-                Spacer(modifier = Modifier.height(24.dp)) // Space before buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { geminiViewModel.suggestJournalPrompt() },
-                        enabled = !isLoadingPrompt && !isLoadingReflection
-                    ) { Text("Prompt") }
-                    Button(
-                        onClick = { geminiViewModel.reflectOnJournalEntry(text) },
-                        enabled = !isLoadingReflection && !isLoadingPrompt && text.isNotBlank()
-                    ) { Text("Reflection") }
-                }
-                Spacer(modifier = Modifier.height(16.dp)) // Space before Finish Entry
-                Button(
-                    onClick = { saveLocalJournalEntry(context, text) },
-                    modifier = Modifier.align(Alignment.End),
-                    enabled = !isLoadingPrompt && !isLoadingReflection
-                ) { Text("Finish Entry") }
-                // Optional: Add a little space at the very bottom inside the scrollable area
-                Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+            // --- AI Assistance ---
+            Text("AI Assistance", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            SuggestionCard(promptSuggestion, isLoadingPrompt)
+            Spacer(modifier = Modifier.height(16.dp))
+            ReflectionCard(journalText, reflectionResult, isLoadingReflection)
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Button(onClick = { geminiViewModel.suggestJournalPrompt() }, enabled = !isLoadingPrompt && !isLoadingReflection) { Text("Prompt") }
+                Button(onClick = { geminiViewModel.reflectOnJournalEntry(journalText) }, enabled = !isLoadingReflection && !isLoadingPrompt && journalText.isNotBlank()) { Text("Reflect") }
             }
-        }
-    }
-
-    // Layout logic based on screen size/orientation
-    when {
-        // tablet landscape: two-pane layout (Keep as is)
-        screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = screenPadding + 8.dp, vertical = screenPadding),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // Journal input takes more weighted space
-                JournalEntryInput(modifier = Modifier.weight(1.8f).fillMaxHeight(), showTitle = true)
-                // AI controls take less weighted space
-                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    // Add padding/spacer to align top content if needed, like before
-                    Spacer(modifier = Modifier.height( MaterialTheme.typography.headlineMedium.fontSize.value.dp + 8.dp))
-                    // AI controls fill the height allocated by weight, internal scrolling handles overflow if any
-                    AiAssistanceAndControls(modifier = Modifier.fillMaxHeight())
+            Spacer(modifier = Modifier.height(32.dp))
+            // --- Save/Discard ---
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { journalViewModel.clearJournalState() }, enabled = !isSaving) {
+                    Icon(Icons.Default.Clear, contentDescription = "Discard", modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Discard")
+                }
+                Button(onClick = { journalViewModel.saveJournalEntry(context) }, enabled = !isSaving) {
+                    if (isSaving) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                    else { Icon(Icons.Default.Check, contentDescription = "Save Entry", modifier = Modifier.size(ButtonDefaults.IconSize)); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Save Entry") }
                 }
             }
         }
 
-        // --- REVISED: default layout (tablet portrait, phone) ---
-        else -> {
-            // Use a Column that fills the whole screen (respecting scaffold padding)
-            Column(
-                modifier = Modifier
-                    .fillMaxSize() // Fill available space after Scaffold padding
-                    .padding(screenPadding) // Apply overall padding
-            ) {
-                // Journal Entry takes most of the space, weight(1f) makes it flexible
-                JournalEntryInput(
-                    modifier = Modifier
-                        .weight(1f) // Takes up available vertical space
-                        .fillMaxWidth(),
-                    showTitle = true
-                )
-                Spacer(modifier = Modifier.height(16.dp)) // Space between sections
-                // AI Controls take the remaining space. Scrolling is handled *inside* it.
-                AiAssistanceAndControls(
-                    modifier = Modifier.fillMaxWidth() // Takes needed vertical space
-                )
+    } else {
+        // --- Fallback View (Permission Denied or Loading) ---
+        Box(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text(if (!hasCamPermission) "Camera permission is needed..." else "Initializing Camera...", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+                if (!hasCamPermission) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Grant Permission") }
+                } else if (cameraProvider == null) { // Show loading indicator only if permission granted but provider not ready
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator()
+                    // Log that we are waiting
+                    Log.d("JournalScreen", "Fallback view: Waiting for cameraProvider.")
+                }
             }
         }
     }
 }
 
+// Helper function to take photo - No changes needed here (already has logging)
+private fun takePhoto(
+    context: Context,
+    imageCapture: ImageCapture,
+    onImageSaved: (Uri) -> Unit
+) {
+    val photoFile = File(context.externalCacheDir ?: context.cacheDir, "JPEG_${System.currentTimeMillis()}.jpg")
+    Log.d("TakePhoto", "Saving picture to: ${photoFile.absolutePath}")
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-// suggestion card: shows prompt suggestion text
+    imageCapture.takePicture(
+        outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+            override fun onError(exc: ImageCaptureException) {
+                Log.e("JournalScreen", "Photo capture failed: ${exc.message}", exc)
+                // Consider showing a Toast or Snackbar to the user here
+            }
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
+                Log.d("JournalScreen", "Photo capture succeeded: $savedUri")
+                onImageSaved(savedUri)
+            }
+        }
+    )
+}
+
+// Suggestion Card - No changes needed
 @Composable
 fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = promptSuggestion, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            if (isLoadingPrompt) {
-                Spacer(modifier = Modifier.width(8.dp))
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
+        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(text = promptSuggestion, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp))
+            if (isLoadingPrompt) CircularProgressIndicator(modifier = Modifier.size(24.dp))
         }
     }
 }
 
-// reflection card: shows reflection result or loading text
+// Reflection Card - No changes needed
 @Composable
 fun ReflectionCard(entryText: String, reflectionResult: String, isLoadingReflection: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 text = when {
                     isLoadingReflection -> "Generating reflection..."
-                    reflectionResult.isBlank() && entryText.isNotBlank() -> "Click 'reflection' for insights."
+                    reflectionResult.isBlank() && entryText.isNotBlank() -> "Click 'Reflect' for insights."
                     reflectionResult.isBlank() && entryText.isBlank() -> "Write an entry first."
                     else -> reflectionResult
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
             )
-            if (isLoadingReflection) {
-                Spacer(modifier = Modifier.width(8.dp))
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
+            if (isLoadingReflection) CircularProgressIndicator(modifier = Modifier.size(24.dp))
         }
     }
 }
