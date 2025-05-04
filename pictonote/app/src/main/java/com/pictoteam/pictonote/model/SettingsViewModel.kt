@@ -14,12 +14,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val settingsDataStoreManager = SettingsDataStoreManager(application)
 
-    // Expose the settings flow as StateFlow for the UI to observe
     val appSettings: StateFlow<AppSettings> = settingsDataStoreManager.appSettingsFlow
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000), // Keep active 5s after UI stops observing
-            initialValue = AppSettings( // Provide initial defaults before DataStore loads
+            initialValue = AppSettings(
                 isDarkMode = false,
                 baseFontSize = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP,
                 notificationsEnabled = true,

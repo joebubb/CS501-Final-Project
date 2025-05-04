@@ -14,7 +14,6 @@ class GeminiViewModel : ViewModel() {
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-1.5-flash" // best blend of intelligence and conciseness
 
-    // --- LiveData Definitions ---
     // Journal Prompt
     private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.") // Initial non-null value
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
@@ -23,7 +22,7 @@ class GeminiViewModel : ViewModel() {
     val isPromptLoading: LiveData<Boolean> = _isPromptLoading
 
     // Journal Reflection
-    private val _journalReflection = MutableLiveData<String>("") // Initial non-null value (empty string)
+    private val _journalReflection = MutableLiveData<String>("") // Initial non-null value
     val journalReflection: LiveData<String> = _journalReflection
 
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
@@ -31,17 +30,8 @@ class GeminiViewModel : ViewModel() {
 
     init {
         Log.d("GeminiViewModel", "ViewModel initialized.")
-        // Initial values are set in declaration now
     }
 
-    // --- Refactored Core API Call Function ---
-    /**
-     * Calls the Gemini API with the given text prompt.
-     *
-     * @param promptText The text to send to the Gemini model.
-     * @param callerTag A tag for logging purposes (e.g., "[JournalPrompt]").
-     * @return The generated text content as a String, or null if an error occurred or the response was empty.
-     */
     private suspend fun generateContentFromPrompt(promptText: String, callerTag: String): String? {
         Log.d("GeminiViewModel", "$callerTag Coroutine launched. Preparing API call...")
         val request = GenerateContentRequest(
@@ -57,24 +47,23 @@ class GeminiViewModel : ViewModel() {
             val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             if (!generatedText.isNullOrBlank()) {
                 Log.i("GeminiViewModel", "$callerTag Generated Content: $generatedText")
-                generatedText.trim() // Return valid, trimmed text
+                generatedText.trim() // Return valid text
             } else {
                 Log.w("GeminiViewModel", "$callerTag Received response, but generated text was null or empty.")
                 Log.d("GeminiViewModel", "$callerTag Full Response: $response")
-                null // Indicate failure (empty content)
+                null
             }
 
         } catch (e: HttpException) {
             val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
             Log.e("GeminiViewModel", "$callerTag HTTP Error: ${e.code()} - ${e.message()}. Body: $errorBody", e)
-            null // Indicate failure (HTTP error)
+            null
         } catch (e: Exception) {
             Log.e("GeminiViewModel", "$callerTag Generic Error: ${e.message}", e)
-            null // Indicate failure (other error)
+            null
         }
     }
 
-    // --- Function using the refactored core call ---
     fun suggestJournalPrompt() {
         if (_isPromptLoading.value == true) return
 
@@ -87,7 +76,7 @@ class GeminiViewModel : ViewModel() {
             val promptForGemini = "Suggest a thoughtful and inspiring journal prompt suitable for self-reflection."
             val generatedPrompt = generateContentFromPrompt(promptForGemini, callerTag)
 
-            // Use the result if not null, otherwise post a specific error message. Both paths post non-null.
+            // Use the result if not null, otherwise post a specific error message
             val messageToPost = generatedPrompt ?: "Error fetching prompt suggestion."
             _journalPromptSuggestion.postValue(messageToPost)
 
@@ -95,7 +84,6 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // --- Function using the refactored core call ---
     fun reflectOnJournalEntry(journalEntry: String) {
         if (journalEntry.isBlank()) {
             // Ensure non-null post
@@ -131,7 +119,6 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // Optional: Keep _apiResult if needed, ensure non-null posting if used
-    private val _apiResult = MutableLiveData<String>("") // Example initial value
+    private val _apiResult = MutableLiveData<String>("")
     val apiResult: LiveData<String> = _apiResult
 }

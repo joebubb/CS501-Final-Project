@@ -7,12 +7,11 @@ import java.io.IOException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+// TODO: Add future archive-related helper functions here.
 
-
-
-// function to save/overwrite the journal entry for the current date
+/*
 fun saveLocalJournalEntry(context: Context, entry: String) {
-if (entry.isBlank()) {
+    if (entry.isBlank()) {
         Log.w("SaveJournalEntry", "Attempted to save an empty entry. Overwriting if exists.")
     }
 
@@ -23,7 +22,7 @@ if (entry.isBlank()) {
         }
 
         // create filename using the current date ONLY
-        val todayDateString = LocalDate.now().format(filenameDateFormatter)
+        val todayDateString = LocalDate.now().format(filenameDateFormatter) // Uses the old formatter
         val filename = "journal_$todayDateString.txt"
         val file = File(directory, filename)
 
@@ -38,3 +37,4 @@ if (entry.isBlank()) {
         Log.e("SaveJournalEntry", "An unexpected error occurred during saving", e)
     }
 }
+*/

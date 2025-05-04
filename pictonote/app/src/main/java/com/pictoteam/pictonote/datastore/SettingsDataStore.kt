@@ -36,10 +36,10 @@ class SettingsDataStoreManager(context: Context) {
 
     // Default values for settings
     companion object {
-        const val DEFAULT_BASE_FONT_SIZE_SP = 16f // Default font size in sp
+        const val DEFAULT_BASE_FONT_SIZE_SP = 16f
         const val DEFAULT_NOTIFICATION_FREQUENCY = "Daily"
-        const val MIN_FONT_SIZE_SP = 12f // Minimum allowed font size
-        const val MAX_FONT_SIZE_SP = 22f // Maximum allowed font size
+        const val MIN_FONT_SIZE_SP = 12f
+        const val MAX_FONT_SIZE_SP = 22f
     }
 
     // Flow to emit current settings
@@ -78,7 +78,6 @@ class SettingsDataStoreManager(context: Context) {
     // Function to update Notification Frequency setting
     suspend fun updateNotificationFrequency(frequency: String) {
         dataStore.edit { preferences ->
-            // Consider validating the frequency string if necessary
             preferences[SettingsKeys.NOTIFICATION_FREQUENCY] = frequency
         }
     }

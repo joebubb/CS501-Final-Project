@@ -1,4 +1,4 @@
-package com.pictoteam.pictonote.composables
+package com.pictoteam.pictonote.composables.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -8,10 +8,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.pictoteam.pictonote.datastore.SettingsDataStoreManager // Import for MIN/MAX constants
+import com.pictoteam.pictonote.datastore.SettingsDataStoreManager
 import com.pictoteam.pictonote.model.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -33,7 +32,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
 
         Divider() // Separator
 
-        // --- Dark Mode Setting ---
+        // Dark Mode Setting
         SettingItem(title = "Dark Mode", description = "Enable dark theme for the app") {
             Switch(
                 checked = settings.isDarkMode,
@@ -43,17 +42,15 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
 
         Divider() // Separator
 
-        // --- Font Size Setting ---
+        // Font Size Setting
         FontSizeSetting(
-            // Use the specific sp value from settings
             currentSizeSp = settings.baseFontSize,
-            // Pass the update function from the view model
             onSizeChange = { settingsViewModel.updateBaseFontSize(it) }
         )
 
         Divider() // Separator
 
-        // --- Notifications Enabled Setting ---
+        // Notifications Enabled Setting
         SettingItem(title = "Push Notifications", description = "Receive reminders and updates") {
             Switch(
                 checked = settings.notificationsEnabled,
@@ -61,7 +58,6 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
             )
         }
 
-        // --- Notification Frequency Setting ---
         // This section only shows if notifications are enabled
         if (settings.notificationsEnabled) {
             NotificationFrequencySetting(
@@ -70,27 +66,24 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 onFrequencySelected = { settingsViewModel.updateNotificationFrequency(it) }
             )
         } else {
-            // Optionally show a disabled state or hide frequency if notifications off
-            Spacer(modifier = Modifier.height(8.dp)) // Keep spacing consistent if hidden
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Enable push notifications to set frequency.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp) // Indent slightly
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
-        Divider() // Separator after frequency or placeholder text
-
+        Divider()
     }
 }
 
-// Reusable Composable for a standard setting row layout
 @Composable
 fun SettingItem(
     title: String,
-    description: String? = null, // Optional description text
-    content: @Composable () -> Unit // Slot for the control (Switch, etc.)
+    description: String? = null,
+    content: @Composable () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -102,17 +95,13 @@ fun SettingItem(
         Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) { // Text takes available space
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (description != null) {
-                // Smaller, less prominent color for description
                 Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        // Placeholder for the actual setting control (Switch, Slider, etc.)
         content()
     }
 }
 
-
-// Composable specifically for the Font Size Slider setting
 @Composable
 fun FontSizeSetting(
     currentSizeSp: Float,
@@ -120,8 +109,8 @@ fun FontSizeSetting(
 ) {
     val minSize = SettingsDataStoreManager.MIN_FONT_SIZE_SP
     val maxSize = SettingsDataStoreManager.MAX_FONT_SIZE_SP
-    // Calculate steps for discrete slider movement (1sp increments)
-    val steps = (maxSize - minSize).toInt() - 1 // e.g., 22-12 = 10 range -> 9 steps
+    // Calculate steps for discrete slider movement
+    val steps = (maxSize - minSize).toInt() - 1
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(
@@ -130,23 +119,22 @@ fun FontSizeSetting(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text("Base Font Size", style = MaterialTheme.typography.titleMedium)
-            // Display the current size in sp, rounded to one decimal place
+            // Display the current size in sp
             Text("${currentSizeSp.roundToInt()}.sp", style = MaterialTheme.typography.bodyMedium)
         }
         Slider(
             value = currentSizeSp,
             onValueChange = { newValue ->
-                // Update immediately as slider moves
+                // Update as slider moves
                 onSizeChange(newValue)
             },
-            valueRange = minSize..maxSize, // Use defined min/max sp values
-            steps = steps, // Make slider jump in 1sp increments
+            valueRange = minSize..maxSize,
+            steps = steps,
             modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
-// Composable specifically for the Notification Frequency Radio Buttons
 @Composable
 fun NotificationFrequencySetting(
     frequencies: List<String>,
@@ -156,7 +144,6 @@ fun NotificationFrequencySetting(
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text("Notification Frequency", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp)) // Space between title and options
-        // Use Column to arrange radio buttons vertically
         Column {
             frequencies.forEach { frequency ->
                 Row(
@@ -164,15 +151,15 @@ fun NotificationFrequencySetting(
                         .fillMaxWidth()
                         .selectable(
                             selected = (frequency == selectedFrequency),
-                            onClick = { onFrequencySelected(frequency) }, // Click row to select
-                            role = Role.RadioButton // Accessibility role
+                            onClick = { onFrequencySelected(frequency) },
+                            role = Role.RadioButton
                         )
                         .padding(vertical = 4.dp), // Padding for each radio button row
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     RadioButton(
                         selected = (frequency == selectedFrequency),
-                        onClick = null // Let the Row's selectable handle the click
+                        onClick = null
                     )
                     Text(
                         text = frequency,
