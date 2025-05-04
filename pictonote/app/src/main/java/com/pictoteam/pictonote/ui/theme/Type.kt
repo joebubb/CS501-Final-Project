@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Define the base typography with default sizes (e.g., base font size = 16.sp)
+// Define the base typography with default sizes
 val BaseTypography = Typography(
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,

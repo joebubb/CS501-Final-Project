@@ -1,6 +1,8 @@
+// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/MainActivity.kt
 package com.pictoteam.pictonote
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -23,12 +25,8 @@ import com.pictoteam.pictonote.composables.screens.ArchiveScreen
 import com.pictoteam.pictonote.composables.screens.HomeScreen
 import com.pictoteam.pictonote.composables.screens.JournalScreen
 import com.pictoteam.pictonote.composables.screens.SettingsScreen
-import com.pictoteam.pictonote.constants.ARG_ENTRY_FILE_PATH
-import com.pictoteam.pictonote.constants.ROUTE_ARCHIVE
-import com.pictoteam.pictonote.constants.ROUTE_HOME
-import com.pictoteam.pictonote.constants.ROUTE_JOURNAL
-import com.pictoteam.pictonote.constants.ROUTE_JOURNAL_WITH_OPTIONAL_ARG
-import com.pictoteam.pictonote.constants.ROUTE_SETTINGS
+import com.pictoteam.pictonote.composables.screens.ViewEntryScreen // Import the new screen
+import com.pictoteam.pictonote.constants.* // Import all constants
 import com.pictoteam.pictonote.model.SettingsViewModel
 import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
 
@@ -83,7 +81,8 @@ fun BottomNavigationBar(navController: NavHostController) {
         NavigationBarItem(
             icon = { Icon(Icons.Default.AccountBox, contentDescription = "Archive") },
             label = { Text("Archive") },
-            selected = currentRoute == ROUTE_ARCHIVE,
+            // Selected if the route is archive OR if viewing an entry (which originates from archive)
+            selected = currentRoute == ROUTE_ARCHIVE || currentRoute?.startsWith(ROUTE_VIEW_ENTRY) == true,
             onClick = { navigateTo(navController, ROUTE_ARCHIVE) }
         )
         NavigationBarItem(
@@ -97,13 +96,17 @@ fun BottomNavigationBar(navController: NavHostController) {
             label = { Text("Journal") },
             selected = currentRoute?.startsWith(ROUTE_JOURNAL) ?: false,
             onClick = {
+                // Navigate to plain journal route only if not already on a journal route
                 if (currentRoute?.startsWith(ROUTE_JOURNAL) != true) {
-                    navController.navigate(ROUTE_JOURNAL) { // Navigate to plain route for new
+                    // Navigate to the base journal route for creating a new entry
+                    navController.navigate(ROUTE_JOURNAL) {
                         popUpTo(navController.graph.startDestinationId) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
                 }
+                // If already on Journal screen (editing), clicking again does nothing specific here,
+                // but the button remains selected.
             }
         )
         NavigationBarItem(
@@ -117,10 +120,17 @@ fun BottomNavigationBar(navController: NavHostController) {
 
 // Navigation helper
 private fun navigateTo(navController: NavHostController, route: String) {
+    // Prevent navigating to the same route if already there
+    // Exception: Allow re-navigating to Archive from ViewEntry, etc. (handled by default nav logic)
     if (navController.currentDestination?.route != route) {
         navController.navigate(route) {
-            popUpTo(navController.graph.startDestinationId) { saveState = true }
+            // Pop up to the start destination of the graph to avoid building up a large stack
+            popUpTo(navController.graph.startDestinationId) {
+                saveState = true // Save state of screens popped off
+            }
+            // Avoid multiple copies of the same destination when reselecting the same item
             launchSingleTop = true
+            // Restore state when navigating back to previously visited screens
             restoreState = true
         }
     }
@@ -133,18 +143,41 @@ fun NavigationGraph(navController: NavHostController) {
         composable(ROUTE_HOME) { HomeScreen() }
         composable(ROUTE_ARCHIVE) { ArchiveScreen(navController = navController) }
         composable(
-            route = ROUTE_JOURNAL_WITH_OPTIONAL_ARG,
+            route = ROUTE_JOURNAL_WITH_OPTIONAL_ARG, // For creating new or editing existing
             arguments = listOf(navArgument(ARG_ENTRY_FILE_PATH) {
                 type = NavType.StringType
-                nullable = true
+                nullable = true // Nullable for new entries
                 defaultValue = null
             })
         ) { backStackEntry ->
-            val entryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
+            // Get potentially null, encoded path
+            val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
             JournalScreen(
                 navController = navController,
-                entryFilePathToEdit = entryFilePath
+                entryFilePathToEdit = encodedEntryFilePath // Pass encoded path (or null) to JournalScreen
             )
+        }
+        composable(
+            route = ROUTE_VIEW_ENTRY_WITH_ARG, // New route for viewing
+            arguments = listOf(navArgument(ARG_ENTRY_FILE_PATH) {
+                type = NavType.StringType
+                nullable = false // Path is required for viewing
+            })
+        ) { backStackEntry ->
+            // Get the required, encoded path. Handle potential null for safety although NavType says non-nullable.
+            val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
+            if (encodedEntryFilePath != null) {
+                ViewEntryScreen(
+                    navController = navController,
+                    encodedEntryFilePath = encodedEntryFilePath // Pass encoded path
+                )
+            } else {
+                // Handle error: Log and navigate back
+                Log.e("NavigationGraph", "Error: entryFilePath was null for $ROUTE_VIEW_ENTRY_WITH_ARG.")
+                LaunchedEffect(Unit) { // Use LaunchedEffect to navigate safely from composable
+                    navController.popBackStack()
+                }
+            }
         }
         composable(ROUTE_SETTINGS) { SettingsScreen() }
     }
