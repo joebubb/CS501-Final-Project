@@ -859,6 +859,7 @@ private fun takePhoto(
             }
         }
     )
+
 }
 
 // Suggestion Card - No changes needed
