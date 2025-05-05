@@ -6,6 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
 import com.pictoteam.pictonote.BuildConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -27,6 +30,13 @@ class GeminiViewModel : ViewModel() {
 
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
     val isReflectionLoading: LiveData<Boolean> = _isReflectionLoading
+
+    // weekly summary
+    private val _weeklySummary = MutableStateFlow<String?>("Generate summary...") // Can be null if error occurs
+    val weeklySummary: StateFlow<String?> = _weeklySummary.asStateFlow()
+
+    private val _isWeeklySummaryLoading = MutableStateFlow<Boolean>(false)
+    val isWeeklySummaryLoading: StateFlow<Boolean> = _isWeeklySummaryLoading.asStateFlow()
 
     init {
         Log.d("GeminiViewModel", "ViewModel initialized.")
@@ -119,6 +129,40 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
+    fun generateWeeklySummary(allEntriesText: String) {
+        if (_isWeeklySummaryLoading.value) return // Don't start if already loading
+        if (allEntriesText.isBlank()) {
+            _weeklySummary.value = "No entries found in the last 7 days to summarize."
+            return
+        }
+
+        _isWeeklySummaryLoading.value = true
+        _weeklySummary.value = "Generating summary..." // Indicate loading
+        val callerTag = "[WeeklySummary]"
+
+        viewModelScope.launch {
+            // Prompt Engineering: Instruct Gemini clearly
+            val promptForGemini = """
+            You are an insightful assistant. Below is a collection of journal entries from the past 7 days.
+            Please read through them and provide a concise summary (around 3-5 sentences) highlighting the main themes, activities, or emotions present.
+            Focus on providing a reflective overview rather than just listing events. If there are conflicting emotions or themes, briefly mention that complexity. 
+            If there is not enough to make a meaningful summary, just summarize what you can in 1-2 sentences and say that there was not much journaling this week. 
+            
+            Journal Entries Text:
+            ---
+            $allEntriesText
+            ---
+
+            Summary:
+            """.trimIndent()
+
+            val generatedSummary = generateContentFromPrompt(promptForGemini, callerTag)
+
+            // Update StateFlow on the main thread (implicitly handled by StateFlow)
+            _weeklySummary.value = generatedSummary ?: "Could not generate summary. Please try again later." // Provide user-friendly error message
+            _isWeeklySummaryLoading.value = false
+        }
+    }
     private val _apiResult = MutableLiveData<String>("")
     val apiResult: LiveData<String> = _apiResult
 }
