@@ -2,12 +2,18 @@ package com.pictoteam.pictonote.ui.theme
 
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.pictoteam.pictonote.datastore.SettingsDataStoreManager // Import for default font size
 
 // --- Keep Color Scheme definitions ---
@@ -25,13 +31,11 @@ private val LightColorScheme = lightColorScheme(
     // Add other overrides if needed
 )
 // --- End Color Scheme definitions ---
-
-
 @Composable
 fun PictoNoteTheme(
     darkTheme: Boolean, // Passed from ViewModel/DataStore
     baseFontSize: Float = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP, // Passed from ViewModel/DataStore
-    dynamicColor: Boolean = true, // Optional: Keep dynamic colors
+    dynamicColor: Boolean = false, // Changed to false by default to avoid potential resource conflicts
     content: @Composable () -> Unit
 ) {
     // 1. Determine Color Scheme
@@ -45,8 +49,7 @@ fun PictoNoteTheme(
     }
 
     // 2. Calculate Font Size Multiplier
-    // Divide the desired base font size (from settings) by the default base font size (defined in BaseTypography, e.g., 16.sp)
-    val defaultBaseSp = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP // Should match BaseTypography.bodyLarge.fontSize
+    val defaultBaseSp = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP
     val fontSizeMultiplier = if (defaultBaseSp > 0) baseFontSize / defaultBaseSp else 1.0f
 
     // 3. Create Scaled Typography
@@ -55,7 +58,7 @@ fun PictoNoteTheme(
     // 4. Apply Theme
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = typography, // Use the calculated, scaled typography
+        typography = typography,
         content = content
     )
 }
