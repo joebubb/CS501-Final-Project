@@ -2,14 +2,13 @@ package com.pictoteam.pictonote
 
 import android.content.Context
 import android.util.Log
+import com.pictoteam.pictonote.constants.JOURNAL_DIR // Fixed import
+import com.pictoteam.pictonote.constants.filenameDateFormatter // Fixed import
 import java.io.File
 import java.io.IOException
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
-// TODO: Add future archive-related helper functions here.
-
-/*
+// function to save/overwrite the journal entry for the current date
 fun saveLocalJournalEntry(context: Context, entry: String) {
     if (entry.isBlank()) {
         Log.w("SaveJournalEntry", "Attempted to save an empty entry. Overwriting if exists.")
@@ -22,7 +21,7 @@ fun saveLocalJournalEntry(context: Context, entry: String) {
         }
 
         // create filename using the current date ONLY
-        val todayDateString = LocalDate.now().format(filenameDateFormatter) // Uses the old formatter
+        val todayDateString = LocalDate.now().format(filenameDateFormatter)
         val filename = "journal_$todayDateString.txt"
         val file = File(directory, filename)
 
@@ -37,4 +36,13 @@ fun saveLocalJournalEntry(context: Context, entry: String) {
         Log.e("SaveJournalEntry", "An unexpected error occurred during saving", e)
     }
 }
-*/
+
+// TODO: Implement remote saving
+fun saveRemoteJournalEntry(){
+    Log.w("ArchiveFunctionality", "saveRemoteJournalEntry not implemented yet.")
+}
+
+// TODO: Implement synchronization logic
+fun Synchronize(){
+    Log.w("ArchiveFunctionality", "Synchronize not implemented yet.")
+}

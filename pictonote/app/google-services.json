@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "308837841018",
+    "project_id": "pictonote-dddea",
+    "storage_bucket": "pictonote-dddea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:308837841018:android:90946179c9392780a8a3c3",
+        "android_client_info": {
+          "package_name": "com.pictoteam.pictonote"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "308837841018-djsn68afs92u2fgu46e0m4rd4kmsu5op.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pictoteam.pictonote",
+            "certificate_hash": "3efb2cb0cd939b3650c24cce08dd4618fa6d0497"
+          }
+        },
+        {
+          "client_id": "308837841018-apsd672boajq36mle8bt760slb0knhlm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC37WzCW3A0iaBZuAzdIhDoQ4DRt5ogufQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "308837841018-apsd672boajq36mle8bt760slb0knhlm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

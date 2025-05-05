@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -86,8 +87,18 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
-    implementation("com.google.firebase:firebase-storage")
-    implementation("com.google.firebase:firebase-messaging")
+    implementation(libs.firebase.storage)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.firebase.firestore)
+
+    implementation(libs.play.services.auth)
+
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation (libs.googleid)
+
 
 
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
@@ -103,4 +114,9 @@ dependencies {
 
     implementation(libs.androidx.camera.camera2)
     implementation(libs.accompanist.systemuicontroller)
+
+    implementation(platform(libs.androidx.compose.bom.v20250401))
+    androidTestImplementation(platform(libs.androidx.compose.bom.v20250401))
+
+
 }

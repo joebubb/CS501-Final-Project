@@ -5,6 +5,7 @@
     <uses-feature android:name="android.hardware.camera.any" />
     <uses-permission android:name="android.permission.CAMERA" />
     <application
+        android:name=".PictoNoteApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -15,7 +16,7 @@
         android:theme="@style/Theme.PictoNote"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name=".AuthActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.PictoNote">
@@ -24,6 +25,13 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.PictoNote"
+            android:windowSoftInputMode="adjustResize"> <!-- Optional: helps with keyboard behavior -->
         </activity>
         <service
             android:name=".MyFirebaseMessagingService"

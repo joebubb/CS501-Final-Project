@@ -21,6 +21,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.google.firebase.auth.FirebaseAuth
 import com.pictoteam.pictonote.composables.screens.ArchiveScreen
 import com.pictoteam.pictonote.composables.screens.HomeScreen
 import com.pictoteam.pictonote.composables.screens.JournalScreen
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
+
             PictoNoteTheme(
                 darkTheme = settings.isDarkMode,
                 baseFontSize = settings.baseFontSize

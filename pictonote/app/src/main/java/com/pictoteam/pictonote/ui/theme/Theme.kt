@@ -2,6 +2,7 @@ package com.pictoteam.pictonote.ui.theme
 
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
+// Removed unused imports: Typography, Color, TextStyle, FontFamily, FontWeight, sp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -31,7 +32,7 @@ private val LightColorScheme = lightColorScheme(
 fun PictoNoteTheme(
     darkTheme: Boolean, // Passed from ViewModel/DataStore
     baseFontSize: Float = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP, // Passed from ViewModel/DataStore
-    dynamicColor: Boolean = true, // Optional: Keep dynamic colors
+    dynamicColor: Boolean = false, // Changed default to false to match Jorge's branch
     content: @Composable () -> Unit
 ) {
     // 1. Determine Color Scheme
