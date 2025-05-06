@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "308837841018-qk18q73dm3hllnriroflgrgag4uhjjrd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pictoteam.pictonote",
+            "certificate_hash": "826b6d2acffc4481ba4858114c2dc5fd4b87c001"
+          }
+        },
+        {
           "client_id": "308837841018-apsd672boajq36mle8bt760slb0knhlm.apps.googleusercontent.com",
           "client_type": 3
         }
