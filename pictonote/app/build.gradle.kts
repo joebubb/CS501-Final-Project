@@ -118,5 +118,5 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom.v20250401))
     androidTestImplementation(platform(libs.androidx.compose.bom.v20250401))
 
-
+    implementation(libs.androidx.material.icons.extended)
 }

@@ -10,22 +10,26 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack // Use auto-mirrored icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState // Import observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel // Import viewModel
 import androidx.navigation.NavHostController
 import coil3.compose.rememberAsyncImagePainter
 import com.pictoteam.pictonote.constants.ARG_ENTRY_FILE_PATH
 import com.pictoteam.pictonote.constants.IMAGE_URI_MARKER
-import com.pictoteam.pictonote.constants.JOURNAL_IMAGE_DIR // Need this for resolving image path
+import com.pictoteam.pictonote.constants.JOURNAL_IMAGE_DIR
 import com.pictoteam.pictonote.constants.ROUTE_JOURNAL
 import com.pictoteam.pictonote.constants.filenameDateTimeFormatter
 import com.pictoteam.pictonote.constants.viewEntryDisplayDateTimeFormatter
+import com.pictoteam.pictonote.model.GeminiViewModel // Import GeminiViewModel
 import com.pictoteam.pictonote.model.JournalEntryData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,7 +41,8 @@ import java.time.LocalDateTime
 @Composable
 fun ViewEntryScreen(
     navController: NavHostController,
-    encodedEntryFilePath: String? // Receive encoded path
+    encodedEntryFilePath: String?,
+    geminiViewModel: GeminiViewModel = viewModel() // Inject GeminiViewModel
 ) {
     val context = LocalContext.current
     var entryData by remember { mutableStateOf<JournalEntryData?>(null) }
@@ -45,7 +50,14 @@ fun ViewEntryScreen(
     var errorLoading by remember { mutableStateOf<String?>(null) }
     var decodedFilePath by remember { mutableStateOf<String?>(null) }
 
+    // Observe reflection state from GeminiViewModel
+    val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
+    val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
+
     LaunchedEffect(encodedEntryFilePath) {
+        // Clear previous reflection when loading a new entry path
+        geminiViewModel.clearReflectionState()
+
         if (encodedEntryFilePath == null) {
             errorLoading = "Entry path missing."
             isLoading = false
@@ -54,9 +66,8 @@ fun ViewEntryScreen(
         }
 
         try {
-            // Decode the file path received from navigation
             val decodedPath = Uri.decode(encodedEntryFilePath)
-            decodedFilePath = decodedPath // Store decoded path for later use (Edit button)
+            decodedFilePath = decodedPath
             Log.d("ViewEntryScreen", "Decoded file path: $decodedPath")
 
             isLoading = true
@@ -65,21 +76,27 @@ fun ViewEntryScreen(
                 loadJournalEntryData(context, decodedPath)
             } catch (e: IOException) {
                 Log.e("ViewEntryScreen", "IOException loading entry: ${e.message}", e)
-                errorLoading = "Could not load entry details. File might be corrupted or missing."
+                errorLoading = "Could not load entry details."
                 null
             } catch (e: Exception) {
                 Log.e("ViewEntryScreen", "Error loading entry: ${e.message}", e)
-                errorLoading = "An unexpected error occurred while loading the entry."
+                errorLoading = "An unexpected error occurred."
                 null
             } finally {
                 isLoading = false
             }
         } catch (e: Exception) {
-            // Error during decoding
             Log.e("ViewEntryScreen", "Error decoding file path '$encodedEntryFilePath': ${e.message}", e)
             errorLoading = "Invalid entry identifier."
             isLoading = false
             decodedFilePath = null
+        }
+    }
+
+    // Clear reflection state when the composable leaves the composition
+    DisposableEffect(Unit) {
+        onDispose {
+            geminiViewModel.clearReflectionState()
         }
     }
 
@@ -93,13 +110,10 @@ fun ViewEntryScreen(
                     }
                 },
                 actions = {
-                    // Show Edit button only if entry loaded successfully and we have a valid path
                     if (entryData != null && decodedFilePath != null) {
                         IconButton(onClick = {
                             try {
-                                // Re-encode the path for safe navigation
                                 val reEncodedPath = Uri.encode(decodedFilePath)
-                                // Navigate to JournalScreen for editing
                                 navController.navigate("$ROUTE_JOURNAL?$ARG_ENTRY_FILE_PATH=$reEncodedPath")
                             } catch (e: Exception) {
                                 Log.e("ViewEntryScreen", "Error encoding/navigating to edit: ${e.message}")
@@ -113,18 +127,62 @@ fun ViewEntryScreen(
             )
         }
     ) { paddingValues ->
-        Box(
+        Column( // Changed Box to Column to allow scrolling for reflection
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues) // Apply padding from Scaffold
-                .padding(16.dp), // Add specific screen padding
-            contentAlignment = Alignment.Center
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState()) // Make content scrollable
+                .padding(16.dp) // Add specific screen padding
         ) {
             when {
-                isLoading -> CircularProgressIndicator()
-                errorLoading != null -> Text(errorLoading!!, color = MaterialTheme.colorScheme.error)
-                entryData != null -> EntryContentView(context, entryData!!)
-                else -> Text("Entry not found or could not be loaded.") // Fallback
+                isLoading -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center loading indicator
+                        CircularProgressIndicator()
+                    }
+                }
+                errorLoading != null -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center error message
+                        Text(errorLoading!!, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                entryData != null -> {
+                    // Display entry content (Image and Text)
+                    EntryContentView(context, entryData!!)
+
+                    Spacer(Modifier.height(24.dp)) // Space before AI section
+
+                    // --- AI Reflection Section ---
+                    Text(
+                        "AI Reflection",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    ReflectionViewCard( // Use the new composable
+                        reflectionResult = reflectionResult,
+                        isLoadingReflection = isLoadingReflection
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            // Trigger reflection using the loaded entry's text
+                            geminiViewModel.reflectOnJournalEntry(entryData!!.textContent)
+                        },
+                        // Disable if loading or if the entry has no text content
+                        enabled = !isLoadingReflection && entryData!!.textContent.isNotBlank(),
+                        modifier = Modifier.align(Alignment.End) // Align button to the end
+                    ) {
+                        Icon(Icons.Default.Psychology, contentDescription = null, Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Reflect")
+                    }
+                    // --- End AI Reflection Section ---
+
+                }
+                else -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center fallback message
+                        Text("Entry not found or could not be loaded.")
+                    }
+                }
             }
         }
     }
@@ -132,12 +190,9 @@ fun ViewEntryScreen(
 
 @Composable
 private fun EntryContentView(context: Context, entryData: JournalEntryData) {
-    val scrollState = rememberScrollState()
+    // This Column is now directly inside the scrollable Column of the Scaffold content
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp) // Keep spacing between image/text
     ) {
         // Image Display (if available)
         val imageFile: File? = remember(entryData.imageRelativePath) {
@@ -150,11 +205,10 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
                 contentDescription = "Journal image",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(4f / 3f) // Maintain aspect ratio
-                    .padding(bottom = 8.dp) // Add some space below image
+                    .aspectRatio(4f / 3f)
+                // Removed bottom padding here, handled by Column's arrangement
             )
         } else if (entryData.imageRelativePath != null) {
-            // Indicate if image was expected but not found
             Text(
                 "Image file missing (${entryData.imageRelativePath})",
                 style = MaterialTheme.typography.bodySmall,
@@ -170,21 +224,51 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
                 style = MaterialTheme.typography.bodyLarge
             )
         } else if (imageFile?.exists() != true) {
-            // Handle case where entry has neither image nor text
             Text(
                 "This entry is empty.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        // If only image exists, no extra text needed here as the image is shown above.
+    }
+}
+
+// --- NEW Composable for Reflection Display ---
+@Composable
+fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 60.dp), // Slightly taller min height
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Determine the text to display based on loading state and content
+            val textToShow = when {
+                isLoadingReflection -> "Generating reflection..."
+                reflectionResult.isBlank() -> "Click 'Reflect' for AI insights on this entry." // Initial prompt
+                else -> reflectionResult // Show the actual reflection if available
+            }
+            Text(
+                text = textToShow,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .weight(1f, fill = false) // Take available space
+                    .padding(end = 8.dp) // Space before indicator
+            )
+            if (isLoadingReflection) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            }
+        }
     }
 }
 
 
-// Helper function to load data for a specific entry file
-// Adapted from JournalViewModel and ArchiveScreen
+// Helper function loadJournalEntryData (no changes needed)
 private suspend fun loadJournalEntryData(context: Context, filePath: String): JournalEntryData = withContext(Dispatchers.IO) {
+    // ... (implementation as before) ...
     val entryFile = File(filePath)
     if (!entryFile.exists() || !entryFile.isFile) {
         throw IOException("Entry file not found or is not a file: $filePath")
@@ -201,7 +285,6 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
             fileTimestamp = LocalDateTime.parse(timestampStr, filenameDateTimeFormatter)
         } catch (e: Exception) {
             Log.w("LoadEntryData", "Could not parse timestamp from filename: ${entryFile.name}", e)
-            // Continue without timestamp if parsing fails
         }
 
         // Read file content
@@ -210,7 +293,6 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
 
         if (imageLine != null) {
             val path = imageLine.substringAfter(IMAGE_URI_MARKER).trim()
-            // Basic validation: check if it looks like a path within our image dir
             if (path.startsWith(JOURNAL_IMAGE_DIR)) {
                 imageRelativePath = path
             } else {
@@ -225,6 +307,6 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
 
     } catch (e: Exception) {
         Log.e("LoadEntryData", "Error reading or parsing file content: $filePath", e)
-        throw IOException("Failed to read entry content from $filePath", e) // Rethrow as IOException or custom exception
+        throw IOException("Failed to read entry content from $filePath", e)
     }
 }

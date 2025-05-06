@@ -1,6 +1,7 @@
 // /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/model/GeminiViewModel.kt
 package com.pictoteam.pictonote.model
 
+// Keep existing imports
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -14,18 +15,17 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 class GeminiViewModel : ViewModel() {
-    // api configuration
+    // --- Existing Configuration & State ---
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
-    private val modelName = "gemini-1.5-flash" // best blend of intelligence and conciseness
+    private val modelName = "gemini-1.5-flash"
 
-    // --- Existing States ---
     private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.")
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
 
     private val _isPromptLoading = MutableLiveData<Boolean>(false)
     val isPromptLoading: LiveData<Boolean> = _isPromptLoading
 
-    private val _journalReflection = MutableLiveData<String>("")
+    private val _journalReflection = MutableLiveData<String>("") // Initialize as empty
     val journalReflection: LiveData<String> = _journalReflection
 
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
@@ -36,8 +36,6 @@ class GeminiViewModel : ViewModel() {
 
     private val _isWeeklySummaryLoading = MutableStateFlow<Boolean>(false)
     val isWeeklySummaryLoading: StateFlow<Boolean> = _isWeeklySummaryLoading.asStateFlow()
-    // --- End Existing States ---
-
 
     init {
         Log.d("GeminiViewModel", "ViewModel initialized.")
@@ -45,6 +43,7 @@ class GeminiViewModel : ViewModel() {
 
     // --- Private Helper ---
     private suspend fun generateContentFromPrompt(promptText: String, callerTag: String): String? {
+        // ... (no changes needed in this function)
         Log.d("GeminiViewModel", "$callerTag Coroutine launched. Preparing API call...")
         val request = GenerateContentRequest(
             contents = listOf(Content(parts = listOf(Part(text = promptText))))
@@ -76,22 +75,21 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // --- Modified suggestJournalPrompt ---
-    fun suggestJournalPrompt(promptType: String) { // Added promptType parameter
+    // --- Public Functions ---
+    fun suggestJournalPrompt(promptType: String) {
+        // ... (no changes needed in this function)
         if (_isPromptLoading.value == true) return
 
         _isPromptLoading.value = true
-        _journalPromptSuggestion.postValue("Generating $promptType prompt...") // Show type in loading message
+        _journalPromptSuggestion.postValue("Generating $promptType prompt...")
         val callerTag = "[JournalPrompt-$promptType]"
 
         viewModelScope.launch {
-            // Construct the prompt based on the selected type
             val promptForGemini = when (promptType) {
                 "Reflective" -> "Suggest a journal prompt focused on self-reflection about recent experiences, emotions, or lessons learned. Make it thoughtful."
                 "Creative" -> "Suggest an imaginative or creative writing prompt suitable for a journal entry. It could be a 'what if' scenario, a descriptive task, or a story starter."
                 "Goal-Oriented" -> "Suggest a journal prompt focused on setting, reviewing, or reflecting on personal goals, progress, or challenges."
                 "Gratitude" -> "Suggest a journal prompt focused on practicing gratitude or appreciating positive aspects of life."
-                // "Default" or any other case
                 else -> "Suggest a thoughtful and inspiring general-purpose journal prompt suitable for self-reflection."
             }
 
@@ -104,21 +102,20 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // --- Existing reflectOnJournalEntry ---
     fun reflectOnJournalEntry(journalEntry: String) {
         if (journalEntry.isBlank()) {
-            _journalReflection.postValue("Please write something before asking for a reflection.")
+            _journalReflection.postValue("The entry is empty, nothing to reflect on.") // Specific message
             return
         }
         if (_isReflectionLoading.value == true) return
 
         _isReflectionLoading.value = true
-        _journalReflection.postValue("Generating reflection...")
+        _journalReflection.postValue("Generating reflection...") // Loading message
         val callerTag = "[JournalReflection]"
 
         viewModelScope.launch {
             val promptForGemini = """
-            Please reflect on the following journal entry. Provide some thoughtful insights, questions to consider, or a brief summary of the potential themes or emotions expressed. Keep the reflection concise.
+            Please reflect on the following journal entry. Provide some thoughtful insights, questions to consider, or a brief summary of the potential themes or emotions expressed. Keep the reflection concise (2-4 sentences).
 
             Journal Entry:
             ---
@@ -130,13 +127,23 @@ class GeminiViewModel : ViewModel() {
 
             val generatedReflection = generateContentFromPrompt(promptForGemini, callerTag)
             val messageToPost = generatedReflection ?: "Error generating reflection for this entry."
-            _journalReflection.postValue(messageToPost)
+            _journalReflection.postValue(messageToPost) // Post result or error
             _isReflectionLoading.postValue(false)
         }
     }
 
-    // --- Existing generateWeeklySummary ---
+    // --- NEW: Function to clear reflection state ---
+    fun clearReflectionState() {
+        if (_journalReflection.value?.isNotEmpty() == true || _isReflectionLoading.value == true) {
+            Log.d("GeminiViewModel", "Clearing reflection state.")
+            _journalReflection.postValue("") // Use postValue for thread safety if called from different contexts
+            _isReflectionLoading.postValue(false) // Ensure loading is also reset
+        }
+    }
+    // --- End New Function ---
+
     fun generateWeeklySummary(allEntriesText: String) {
+        // ... (no changes needed in this function)
         if (_isWeeklySummaryLoading.value) return
         if (allEntriesText.isBlank()) {
             _weeklySummary.value = "No entries found in the last 7 days to summarize."
@@ -168,7 +175,7 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // Keep _apiResult if used elsewhere
+    // Keep if used elsewhere
     private val _apiResult = MutableLiveData<String>("")
     val apiResult: LiveData<String> = _apiResult
 }

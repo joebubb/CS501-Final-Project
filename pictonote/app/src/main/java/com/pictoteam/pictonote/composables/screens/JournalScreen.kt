@@ -26,14 +26,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.livedata.observeAsState // Keep this for prompt suggestion
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-// import androidx.compose.ui.graphics.SolidColor // No longer needed if using MaterialTheme textStyle
+// import androidx.compose.ui.graphics.SolidColor // Not needed
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-// import androidx.compose.ui.text.TextStyle // No longer needed if using MaterialTheme textStyle
+// import androidx.compose.ui.text.TextStyle // Not needed
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,9 +57,9 @@ val promptTypes = listOf("Default", "Reflective", "Creative", "Goal-Oriented", "
 @Composable
 fun JournalScreen(
     navController: NavHostController,
-    entryFilePathToEdit: String?, // This is the ENCODED path if editing, null if creating
+    entryFilePathToEdit: String?,
     journalViewModel: JournalViewModel = viewModel(),
-    geminiViewModel: GeminiViewModel = viewModel()
+    geminiViewModel: GeminiViewModel = viewModel() // Still need for Prompt
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -70,10 +70,10 @@ fun JournalScreen(
     val isSaving by journalViewModel.isSaving.collectAsStateWithLifecycle()
     val isEditing by journalViewModel.isEditing.collectAsStateWithLifecycle()
 
+    // Only observe Prompt related state from GeminiViewModel
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for suggestion")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
-    val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
-    val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
+    // REMOVED: reflectionResult and isLoadingReflection state observation
 
     // Camera related state
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
@@ -87,17 +87,18 @@ fun JournalScreen(
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCamPermission = granted
         if (!granted) {
-            Toast.makeText(context, "Camera permission is required to add photos.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Camera permission is required.", Toast.LENGTH_LONG).show()
         }
     }
 
     // Dropdown Menu State
     var isPromptDropdownExpanded by remember { mutableStateOf(false) }
-    var selectedPromptType by remember { mutableStateOf(promptTypes[0]) } // Default selection
+    var selectedPromptType by remember { mutableStateOf(promptTypes[0]) }
 
 
     // --- Helper Functions ---
     suspend fun <T> ListenableFuture<T>.await(): T {
+        // ... (implementation as before)
         return suspendCancellableCoroutine { continuation ->
             addListener({
                 try { continuation.resume(get()) }
@@ -109,7 +110,7 @@ fun JournalScreen(
 
     // --- Effects ---
     LaunchedEffect(entryFilePathToEdit, journalViewModel) {
-        // ... (existing load/clear logic - no changes needed here) ...
+        // ... (load/clear logic remains the same) ...
         if (entryFilePathToEdit != null) {
             Log.d("JournalScreen", "Effect: Received potential edit path (encoded): $entryFilePathToEdit")
             try {
@@ -160,7 +161,7 @@ fun JournalScreen(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).navigationBarsPadding().size(72.dp),
                     shape = CircleShape,
                     enabled = cameraProvider != null && !isSaving
-                ) { Icon(Icons.Filled.AddCircle, "Take Photo", modifier = Modifier.size(36.dp)) }
+                ) { Icon(Icons.Filled.PhotoCamera, "Take Photo", modifier = Modifier.size(36.dp)) }
             }
         }
 
@@ -173,7 +174,8 @@ fun JournalScreen(
             ) {
                 Spacer(Modifier.height(16.dp))
 
-                // Image Display (if available)
+                // Image Display
+                // ... (no changes) ...
                 if (capturedImageUri != null) {
                     Image(
                         painter = rememberAsyncImagePainter(model = capturedImageUri),
@@ -185,7 +187,9 @@ fun JournalScreen(
                     Text("Editing text-only entry", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
                 }
 
-                // Journal Text Input Area
+
+                // Journal Text Input
+                // ... (no changes) ...
                 Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
                 BasicTextField(
                     value = journalText,
@@ -210,25 +214,25 @@ fun JournalScreen(
                 SuggestionCard(promptSuggestion, isLoadingPrompt) // Displays the generated prompt
                 Spacer(Modifier.height(16.dp))
 
-                // --- Row for Prompt Type Dropdown and Button ---
+                // Row for Prompt Type Dropdown and Button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp) // Add space between dropdown and button
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Prompt Type Dropdown
                     ExposedDropdownMenuBox(
                         expanded = isPromptDropdownExpanded,
                         onExpandedChange = { isPromptDropdownExpanded = !isPromptDropdownExpanded },
-                        modifier = Modifier.weight(1f) // Let dropdown take available space
+                        modifier = Modifier.weight(1f)
                     ) {
-                        OutlinedTextField( // Use OutlinedTextField for consistency
+                        OutlinedTextField(
                             value = selectedPromptType,
-                            onValueChange = {}, // Read-only
+                            onValueChange = {},
                             readOnly = true,
                             label = { Text("Prompt Type") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isPromptDropdownExpanded) },
-                            modifier = Modifier.menuAnchor() // Important for positioning
+                            modifier = Modifier.menuAnchor()
                         )
                         ExposedDropdownMenu(
                             expanded = isPromptDropdownExpanded,
@@ -247,39 +251,24 @@ fun JournalScreen(
                         }
                     }
 
-                    // Prompt Button
+                    // Prompt Button - Adjusted enabled logic
                     Button(
-                        onClick = {
-                            // Call ViewModel with the currently selected type
-                            geminiViewModel.suggestJournalPrompt(selectedPromptType)
-                        },
-                        enabled = !isLoadingPrompt && !isLoadingReflection && !isSaving
+                        onClick = { geminiViewModel.suggestJournalPrompt(selectedPromptType) },
+                        enabled = !isLoadingPrompt && !isSaving // Remove isLoadingReflection check
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)) // Changed Icon
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Prompt")
                     }
                 }
                 // --- End Row ---
 
-                Spacer(Modifier.height(16.dp)) // Space below prompt controls
-                ReflectionCard(journalText, reflectionResult, isLoadingReflection)
-                Spacer(Modifier.height(16.dp))
+                // REMOVED: Spacer, ReflectionCard, Reflect Button
 
-                // Reflect Button (Moved outside the Row)
-                Button(
-                    onClick = { geminiViewModel.reflectOnJournalEntry(journalText) },
-                    enabled = !isLoadingReflection && !isLoadingPrompt && journalText.isNotBlank() && !isSaving,
-                    modifier = Modifier.align(Alignment.End) // Align to the end
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)) // Changed Icon
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Reflect")
-                }
-
-                Spacer(Modifier.height(32.dp)) // More space before final action buttons
+                Spacer(Modifier.height(32.dp)) // Keep spacer before final buttons
 
                 // Cancel / Save/Update Buttons
+                // ... (no changes needed in this row) ...
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -297,7 +286,7 @@ fun JournalScreen(
                         },
                         enabled = !isSaving
                     ) {
-                        Icon(Icons.Default.Clear, "Cancel", modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.Default.Cancel, "Cancel", modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Cancel")
                     }
@@ -332,6 +321,7 @@ fun JournalScreen(
 
         // State 3: Fallback
         else -> {
+            // ... (no changes needed here) ...
             Box(
                 modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp),
                 contentAlignment = Alignment.Center
@@ -355,11 +345,11 @@ fun JournalScreen(
     }
 }
 
-
-// --- Helper Composables (SuggestionCard, ReflectionCard - no changes) ---
+// --- Helper Composables (Only SuggestionCard is needed now) ---
 
 @Composable
 fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
+    // ... (no changes needed here) ...
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp),
@@ -378,40 +368,15 @@ fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
     }
 }
 
-@Composable
-fun ReflectionCard(entryText: String, reflectionResult: String, isLoadingReflection: Boolean) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val textToShow = when {
-                isLoadingReflection -> "Generating reflection..."
-                reflectionResult.isBlank() && entryText.isNotBlank() -> "Click 'Reflect' for insights."
-                reflectionResult.isBlank() && entryText.isBlank() -> "Write an entry first."
-                else -> reflectionResult
-            }
-            Text(
-                text = textToShow,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
-            )
-            if (isLoadingReflection) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
-        }
-    }
-}
-
+// REMOVED: ReflectionCard composable
 
 // --- Helper Function (takePhoto - no changes) ---
-
 private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
     onImageSaved: (Uri) -> Unit
 ) {
+    // ... (no changes needed here) ...
     val cacheDir = context.cacheDir ?: run {
         Log.e("TakePhoto", "Cache directory is null.")
         Toast.makeText(context, "Storage Error", Toast.LENGTH_SHORT).show()

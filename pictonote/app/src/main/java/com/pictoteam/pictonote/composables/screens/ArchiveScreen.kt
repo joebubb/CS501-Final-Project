@@ -331,7 +331,7 @@ fun MemoriesCard(
                         },
                         modifier = Modifier.align(Alignment.End) // Align button to the right
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = "Open Entry", Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.Default.Book, contentDescription = "Open Entry", Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Open Entry")
                     }
