@@ -11,35 +11,42 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+// Creates a DataStore instance for the app settings
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
+// Keys for accessing each setting in the DataStore
 object SettingsKeys {
     val DARK_MODE = booleanPreferencesKey("dark_mode_enabled")
     val BASE_FONT_SIZE = floatPreferencesKey("base_font_size_sp")
     val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
     val NOTIFICATION_FREQUENCY = stringPreferencesKey("notification_frequency")
-    val AUTO_SYNC_ENABLED = booleanPreferencesKey("auto_sync_enabled") // New Key
+    val AUTO_SYNC_ENABLED = booleanPreferencesKey("auto_sync_enabled") // For cloud syncing
 }
 
+// Data model that represents all app settings
 data class AppSettings(
     val isDarkMode: Boolean,
     val baseFontSize: Float,
     val notificationsEnabled: Boolean,
     val notificationFrequency: String,
-    val autoSyncEnabled: Boolean // New Property
+    val autoSyncEnabled: Boolean // Controls whether sync happens automatically
 )
 
 class SettingsDataStoreManager(context: Context) {
     private val dataStore = context.dataStore
 
     companion object {
+        // Default values for first-time app users
         const val DEFAULT_BASE_FONT_SIZE_SP = 16f
         const val DEFAULT_NOTIFICATION_FREQUENCY = "Daily"
-        const val DEFAULT_AUTO_SYNC_ENABLED = true // Default is ON
+        const val DEFAULT_AUTO_SYNC_ENABLED = true // Most users want auto-sync
+
+        // Limits for font size slider
         const val MIN_FONT_SIZE_SP = 12f
         const val MAX_FONT_SIZE_SP = 22f
     }
 
+    // Provides a Flow of the latest settings that UI can collect
     val appSettingsFlow: Flow<AppSettings> = dataStore.data
         .map { preferences ->
             AppSettings(
@@ -47,34 +54,39 @@ class SettingsDataStoreManager(context: Context) {
                 baseFontSize = preferences[SettingsKeys.BASE_FONT_SIZE] ?: DEFAULT_BASE_FONT_SIZE_SP,
                 notificationsEnabled = preferences[SettingsKeys.NOTIFICATIONS_ENABLED] ?: true,
                 notificationFrequency = preferences[SettingsKeys.NOTIFICATION_FREQUENCY] ?: DEFAULT_NOTIFICATION_FREQUENCY,
-                autoSyncEnabled = preferences[SettingsKeys.AUTO_SYNC_ENABLED] ?: DEFAULT_AUTO_SYNC_ENABLED // Read new setting
+                autoSyncEnabled = preferences[SettingsKeys.AUTO_SYNC_ENABLED] ?: DEFAULT_AUTO_SYNC_ENABLED
             )
         }
 
+    // Toggle dark mode setting
     suspend fun updateDarkMode(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.DARK_MODE] = enabled
         }
     }
 
+    // Update text size with limits to prevent extremes
     suspend fun updateBaseFontSize(sizeSp: Float) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.BASE_FONT_SIZE] = sizeSp.coerceIn(MIN_FONT_SIZE_SP, MAX_FONT_SIZE_SP)
         }
     }
 
+    // Toggle notification setting
     suspend fun updateNotificationsEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.NOTIFICATIONS_ENABLED] = enabled
         }
     }
 
+    // Change how often notifications appear
     suspend fun updateNotificationFrequency(frequency: String) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.NOTIFICATION_FREQUENCY] = frequency
         }
     }
 
+    // Toggle whether entries sync automatically or manually
     suspend fun updateAutoSyncEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsKeys.AUTO_SYNC_ENABLED] = enabled

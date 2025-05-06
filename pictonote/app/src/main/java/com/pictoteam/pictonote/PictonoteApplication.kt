@@ -8,6 +8,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestoreSettings
 import com.google.firebase.firestore.persistentCacheSettings
 
+/**
+ * Application class that initializes Firebase and Firestore**/
+
 class PictoNoteApplication : Application() {
 
     lateinit var firestore: FirebaseFirestore

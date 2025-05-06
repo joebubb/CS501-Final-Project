@@ -1,17 +1,18 @@
-package com.pictoteam.pictonote
+package com.pictoteam.pictonote.database
 
 import android.content.Context
 import android.util.Log
-import com.pictoteam.pictonote.constants.JOURNAL_DIR // Fixed import
-import com.pictoteam.pictonote.constants.filenameDateFormatter // Fixed import
+import com.pictoteam.pictonote.constants.JOURNAL_DIR
+import com.pictoteam.pictonote.constants.filenameDateFormatter
 import java.io.File
 import java.io.IOException
 import java.time.LocalDate
 
-// function to save/overwrite the journal entry for the current date
+// Saves today's journal entry to local storage
+// Overwrites any existing entry for today
 fun saveLocalJournalEntry(context: Context, entry: String) {
     if (entry.isBlank()) {
-        Log.w("SaveJournalEntry", "Attempted to save an empty entry. Overwriting if exists.")
+        Log.w("SaveJournalEntry", "Saving empty entry - might be clearing previous content")
     }
 
     try {
@@ -20,7 +21,7 @@ fun saveLocalJournalEntry(context: Context, entry: String) {
             directory.mkdirs()
         }
 
-        // create filename using the current date ONLY
+        // Format the filename with today's date
         val todayDateString = LocalDate.now().format(filenameDateFormatter)
         val filename = "journal_$todayDateString.txt"
         val file = File(directory, filename)
@@ -31,18 +32,9 @@ fun saveLocalJournalEntry(context: Context, entry: String) {
 
     } catch (e: IOException) {
         Log.e("SaveJournalEntry", "Error saving journal entry to file", e)
-        // Handle the error appropriately
+        // We should probably show a toast or something to the user here
     } catch (e: Exception) {
         Log.e("SaveJournalEntry", "An unexpected error occurred during saving", e)
     }
 }
 
-// TODO: Implement remote saving
-fun saveRemoteJournalEntry(){
-    Log.w("ArchiveFunctionality", "saveRemoteJournalEntry not implemented yet.")
-}
-
-// TODO: Implement synchronization logic
-fun Synchronize(){
-    Log.w("ArchiveFunctionality", "Synchronize not implemented yet.")
-}

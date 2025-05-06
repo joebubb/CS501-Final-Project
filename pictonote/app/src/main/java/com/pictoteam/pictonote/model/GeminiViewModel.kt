@@ -1,7 +1,6 @@
-// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/model/GeminiViewModel.kt
 package com.pictoteam.pictonote.model
 
-// Keep existing imports
+// View model that handles communication with the Gemini AI API
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -15,22 +14,25 @@ import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
 class GeminiViewModel : ViewModel() {
-    // --- Existing Configuration & State ---
+    // API configuration settings
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-1.5-flash"
 
+    // Journal prompt suggestion state
     private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.")
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
 
     private val _isPromptLoading = MutableLiveData<Boolean>(false)
     val isPromptLoading: LiveData<Boolean> = _isPromptLoading
 
-    private val _journalReflection = MutableLiveData<String>("") // Initialize as empty
+    // AI reflection on journal entries state
+    private val _journalReflection = MutableLiveData<String>("")
     val journalReflection: LiveData<String> = _journalReflection
 
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
     val isReflectionLoading: LiveData<Boolean> = _isReflectionLoading
 
+    // Weekly journal summary state
     private val _weeklySummary = MutableStateFlow<String?>("Generate summary...")
     val weeklySummary: StateFlow<String?> = _weeklySummary.asStateFlow()
 
@@ -41,9 +43,8 @@ class GeminiViewModel : ViewModel() {
         Log.d("GeminiViewModel", "ViewModel initialized.")
     }
 
-    // --- Private Helper ---
+    // Helper function that handles the actual API calls to Gemini
     private suspend fun generateContentFromPrompt(promptText: String, callerTag: String): String? {
-        // ... (no changes needed in this function)
         Log.d("GeminiViewModel", "$callerTag Coroutine launched. Preparing API call...")
         val request = GenerateContentRequest(
             contents = listOf(Content(parts = listOf(Part(text = promptText))))
@@ -75,9 +76,8 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // --- Public Functions ---
+    // Generates different types of journal prompts (reflective, creative, etc)
     fun suggestJournalPrompt(promptType: String) {
-        // ... (no changes needed in this function)
         if (_isPromptLoading.value == true) return
 
         _isPromptLoading.value = true
@@ -102,48 +102,48 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
+    // Analyzes journal content and provides thoughtful reflection
     fun reflectOnJournalEntry(journalEntry: String) {
         if (journalEntry.isBlank()) {
-            _journalReflection.postValue("The entry is empty, nothing to reflect on.") // Specific message
+            _journalReflection.postValue("The entry is empty, nothing to reflect on.")
             return
         }
         if (_isReflectionLoading.value == true) return
 
         _isReflectionLoading.value = true
-        _journalReflection.postValue("Generating reflection...") // Loading message
+        _journalReflection.postValue("Generating reflection...")
         val callerTag = "[JournalReflection]"
 
         viewModelScope.launch {
             val promptForGemini = """
-            Please reflect on the following journal entry. Provide some thoughtful insights, questions to consider, or a brief summary of the potential themes or emotions expressed. Keep the reflection concise (2-4 sentences).
+           Please reflect on the following journal entry. Provide some thoughtful insights, questions to consider, or a brief summary of the potential themes or emotions expressed. Keep the reflection concise (2-4 sentences).
 
-            Journal Entry:
-            ---
-            $journalEntry
-            ---
+           Journal Entry:
+           ---
+           $journalEntry
+           ---
 
-            Reflection:
-            """.trimIndent()
+           Reflection:
+           """.trimIndent()
 
             val generatedReflection = generateContentFromPrompt(promptForGemini, callerTag)
             val messageToPost = generatedReflection ?: "Error generating reflection for this entry."
-            _journalReflection.postValue(messageToPost) // Post result or error
+            _journalReflection.postValue(messageToPost)
             _isReflectionLoading.postValue(false)
         }
     }
 
-    // --- NEW: Function to clear reflection state ---
+    // Resets the reflection UI state when user navigates away
     fun clearReflectionState() {
         if (_journalReflection.value?.isNotEmpty() == true || _isReflectionLoading.value == true) {
             Log.d("GeminiViewModel", "Clearing reflection state.")
-            _journalReflection.postValue("") // Use postValue for thread safety if called from different contexts
-            _isReflectionLoading.postValue(false) // Ensure loading is also reset
+            _journalReflection.postValue("")
+            _isReflectionLoading.postValue(false)
         }
     }
-    // --- End New Function ---
 
+    // Creates a summary of the past week's journal entries
     fun generateWeeklySummary(allEntriesText: String) {
-        // ... (no changes needed in this function)
         if (_isWeeklySummaryLoading.value) return
         if (allEntriesText.isBlank()) {
             _weeklySummary.value = "No entries found in the last 7 days to summarize."
@@ -156,18 +156,18 @@ class GeminiViewModel : ViewModel() {
 
         viewModelScope.launch {
             val promptForGemini = """
-            You are an insightful assistant. Below is a collection of journal entries from the past 7 days.
-            Please read through them and provide a concise summary (around 3-5 sentences) highlighting the main themes, activities, or emotions present.
-            Focus on providing a reflective overview rather than just listing events. If there are conflicting emotions or themes, briefly mention that complexity.
-            If there is not enough to make a meaningful summary, just summarize what you can in 1-2 sentences and say that there was not much journaling this week.
+           You are an insightful assistant. Below is a collection of journal entries from the past 7 days.
+           Please read through them and provide a concise summary (around 3-5 sentences) highlighting the main themes, activities, or emotions present.
+           Focus on providing a reflective overview rather than just listing events. If there are conflicting emotions or themes, briefly mention that complexity.
+           If there is not enough to make a meaningful summary, just summarize what you can in 1-2 sentences and say that there was not much journaling this week.
 
-            Journal Entries Text:
-            ---
-            $allEntriesText
-            ---
+           Journal Entries Text:
+           ---
+           $allEntriesText
+           ---
 
-            Summary:
-            """.trimIndent()
+           Summary:
+           """.trimIndent()
 
             val generatedSummary = generateContentFromPrompt(promptForGemini, callerTag)
             _weeklySummary.value = generatedSummary ?: "Could not generate summary. Please try again later."
@@ -175,7 +175,7 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    // Keep if used elsewhere
+    // Legacy API result for compatibility
     private val _apiResult = MutableLiveData<String>("")
     val apiResult: LiveData<String> = _apiResult
 }

@@ -27,9 +27,13 @@ private const val TAG = "AuthActivity"
 
 class AuthActivity : ComponentActivity() {
 
+    // Firebase authentication instance
     private lateinit var mAuth: FirebaseAuth
+    // Google Sign-In client for authentication
     private lateinit var googleSignInClient: GoogleSignInClient
+    // Launcher for the Google Sign-In intent
     private lateinit var signInLauncher: ActivityResultLauncher<Intent>
+    // Flag to prevent multiple sign-in attempts
     private var isSignInInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,7 +51,7 @@ class AuthActivity : ComponentActivity() {
             return
         }
 
-        // Register the launcher
+        // Register the activity result launcher for sign-in
         signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             Log.d(TAG, "Sign in result received: ${result.resultCode}")
             isSignInInProgress = false
@@ -77,17 +81,18 @@ class AuthActivity : ComponentActivity() {
             return
         }
 
-        // Set the minimal possible Compose content
+        // Set up minimal splash screen UI
         setContent {
             MinimalComposeContent()
         }
 
-        // Handle authentication with a delay
+        // Slight delay before checking auth state for better UX
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             checkAuthAndProceed()
         }, 1500)
     }
 
+    // Simple splash screen UI
     @Composable
     private fun MinimalComposeContent() {
         Box(
@@ -98,6 +103,7 @@ class AuthActivity : ComponentActivity() {
         }
     }
 
+    // Check if user is already signed in
     private fun checkAuthAndProceed() {
         Log.d(TAG, "Checking authentication status")
 
@@ -106,7 +112,7 @@ class AuthActivity : ComponentActivity() {
             Log.d(TAG, "User already signed in: ${currentUser.email}")
             navigateToMain()
         } else {
-            // Use silent sign-in to refresh the token
+            // Try silent sign-in first to avoid showing the sign-in UI
             Log.d(TAG, "Attempting silent sign-in to refresh token")
             googleSignInClient.silentSignIn()
                 .addOnSuccessListener { account ->
@@ -121,7 +127,7 @@ class AuthActivity : ComponentActivity() {
         }
     }
 
-
+    // Launch the Google Sign-In flow
     private fun signInWithGoogle() {
         if (isSignInInProgress) {
             Log.d(TAG, "Sign-in already in progress")
@@ -141,6 +147,7 @@ class AuthActivity : ComponentActivity() {
         }
     }
 
+    // Process the Google Sign-In result
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
@@ -155,6 +162,7 @@ class AuthActivity : ComponentActivity() {
         }
     }
 
+    // Authenticate with Firebase using Google credentials
     private fun firebaseAuthWithGoogle(account: GoogleSignInAccount) {
         Log.d(TAG, "Authenticating with Firebase using Google token")
 
@@ -178,6 +186,7 @@ class AuthActivity : ComponentActivity() {
             }
     }
 
+    // Navigate to main app screen after successful authentication
     private fun navigateToMain() {
         Log.d(TAG, "Navigating to MainActivity")
         startActivity(Intent(this, MainActivity::class.java))
