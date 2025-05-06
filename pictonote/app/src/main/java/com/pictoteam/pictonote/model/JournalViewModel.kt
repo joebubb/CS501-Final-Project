@@ -5,10 +5,12 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
-// Removed compose runtime imports, handle text state differently
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.pictoteam.pictonote.appFirestore // For potential future direct use if needed
 import com.pictoteam.pictonote.constants.*
+import com.pictoteam.pictonote.database.extractImagePathFromContent // Added import
+import com.pictoteam.pictonote.database.saveEntryToRemote
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -18,14 +20,11 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.time.LocalDateTime
 
-const val IMAGE_URI_MARKER = "IMAGE_URI::"
-
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _capturedImageUri = MutableStateFlow<Uri?>(null)
-    val capturedImageUri: StateFlow<Uri?> = _capturedImageUri.asStateFlow() // Expose as StateFlow
+    val capturedImageUri: StateFlow<Uri?> = _capturedImageUri.asStateFlow()
 
-    // Use StateFlow for text as well for consistency and Compose collection
     private val _journalText = MutableStateFlow("")
     val journalText: StateFlow<String> = _journalText.asStateFlow()
 
@@ -34,194 +33,129 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
     private val _editingFilePath = MutableStateFlow<String?>(null)
     val isEditing: StateFlow<Boolean> = _editingFilePath.map { it != null }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false) // Derived state
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-
-    // Call this from BasicTextField's onValueChange
-    fun updateJournalText(newText: String) {
-        _journalText.value = newText
-    }
+    fun updateJournalText(newText: String) { _journalText.value = newText }
 
     fun onImageCaptured(uri: Uri) {
-        if (_editingFilePath.value == null) { // Only allow image capture for new entries
-            _capturedImageUri.value = uri
-            Log.d("JournalViewModel", "Image captured for new entry: $uri")
-        } else {
-            Log.w("JournalViewModel", "Image capture ignored while editing.")
-        }
+        if (_editingFilePath.value == null) _capturedImageUri.value = uri
+        else Log.w("JournalVM", "Img capture ignored while editing.")
     }
 
     fun clearJournalState() {
-        _capturedImageUri.value = null
-        _journalText.value = ""
-        _isSaving.value = false
-        _editingFilePath.value = null
-        Log.d("JournalViewModel", "State cleared.")
+        _capturedImageUri.value = null; _journalText.value = "";
+        _isSaving.value = false; _editingFilePath.value = null
+        Log.d("JournalVM", "State cleared.")
     }
 
-    // Helper to check if ViewModel is in new entry state
-    fun isNewEntryState(): Boolean {
-        return _capturedImageUri.value == null && _journalText.value.isEmpty() && _editingFilePath.value == null && !_isSaving.value
-    }
-
+    fun isNewEntryState(): Boolean = _capturedImageUri.value == null && _journalText.value.isEmpty() && _editingFilePath.value == null && !_isSaving.value
 
     fun loadEntryForEditing(context: Context, filePath: String) {
-        Log.d("JournalViewModel", "Loading entry for editing: $filePath")
-        clearJournalState() // Ensure clean state before loading
-        _editingFilePath.value = filePath
-
+        Log.d("JournalVM", "Loading for edit: $filePath"); clearJournalState(); _editingFilePath.value = filePath
         viewModelScope.launch {
             try {
-                val (imageRelPath, loadedText) = readJournalEntryFromFile(context, filePath)
-
+                val (imgRelPath, loadedText) = readJournalEntryFromFileInternal(context, filePath) // Use internal helper
                 withContext(Dispatchers.Main) {
-                    if (imageRelPath != null) {
-                        val imageFile = File(context.filesDir, imageRelPath)
-                        if (imageFile.exists()) {
-                            _capturedImageUri.value = Uri.fromFile(imageFile)
-                        } else {
-                            Log.w("JournalViewModel", "Edit Load: Image file missing: $imageRelPath")
-                            _capturedImageUri.value = null
-                            Toast.makeText(context, "Warning: Image file missing", Toast.LENGTH_SHORT).show()
+                    if (imgRelPath != null) {
+                        val imgFile = File(context.filesDir, imgRelPath)
+                        _capturedImageUri.value = if (imgFile.exists()) Uri.fromFile(imgFile) else null.also {
+                            Log.w("JournalVM", "Edit Load: Img missing: $imgRelPath")
+                            Toast.makeText(context, "Warn: Img missing", Toast.LENGTH_SHORT).show()
                         }
-                    } else {
-                        _capturedImageUri.value = null
-                    }
-                    _journalText.value = loadedText ?: "" // Update text StateFlow
-                    Log.d("JournalViewModel", "Entry loaded for editing. Image: ${_capturedImageUri.value}, TextLen: ${_journalText.value.length}")
+                    } else _capturedImageUri.value = null
+                    _journalText.value = loadedText ?: ""
+                    Log.d("JournalVM", "Entry loaded. Img: ${_capturedImageUri.value}, TextLen: ${journalText.value.length}")
                 }
             } catch (e: Exception) {
-                Log.e("JournalViewModel", "Error loading entry: $filePath", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Error loading entry", Toast.LENGTH_LONG).show()
-                    _editingFilePath.value = null
-                }
+                Log.e("JournalVM", "Error loading $filePath", e)
+                withContext(Dispatchers.Main) { Toast.makeText(context, "Error loading entry", Toast.LENGTH_LONG).show(); _editingFilePath.value = null }
             }
         }
     }
 
     fun saveJournalEntry(context: Context, onComplete: (success: Boolean, wasEditing: Boolean) -> Unit) {
         if (_isSaving.value) return
-
-        val currentText = _journalText.value // Capture current value
-        val currentImageUri = _capturedImageUri.value
-        val currentEditingPath = _editingFilePath.value
-
-        if (currentImageUri == null && currentText.isBlank()) {
-            Toast.makeText(context, "Nothing to save", Toast.LENGTH_SHORT).show()
-            onComplete(false, currentEditingPath != null)
-            return
+        val currentText = _journalText.value; val currentImgUri = _capturedImageUri.value; val currentEditPath = _editingFilePath.value
+        if (currentImgUri == null && currentText.isBlank() && currentEditPath == null) {
+            Toast.makeText(context, "Nothing to save", Toast.LENGTH_SHORT).show(); onComplete(false, false); return
         }
-
-        _isSaving.value = true
-        val wasEditing = currentEditingPath != null
-
+        _isSaving.value = true; val wasEditing = currentEditPath != null
         viewModelScope.launch {
-            var success = false
-            var savedIdentifier: String? = null
-
+            var localSaveOk = false; var entryId: String? = null; var finalContent: String? = null
             try {
-                savedIdentifier = withContext(Dispatchers.IO) {
-                    val contentBuilder = StringBuilder()
-                    if (wasEditing) {
-                        // Edit Mode
-                        val (existingImageRelPath, _) = readJournalEntryFromFile(context, currentEditingPath!!)
-                        if (existingImageRelPath != null) {
-                            contentBuilder.appendLine("$IMAGE_URI_MARKER$existingImageRelPath")
-                        }
-                        contentBuilder.append(currentText)
-                        overwriteTextFile(context, currentEditingPath, contentBuilder.toString())
-                        currentEditingPath // Return path
+                val contentBuilder = StringBuilder()
+                if (wasEditing) {
+                    entryId = File(currentEditPath!!).name.substringAfter("journal_").removeSuffix(".txt")
+                    val (existingImgRelPath, _) = readJournalEntryFromFileInternal(context, currentEditPath)
+                    if (existingImgRelPath != null) {
+                        val currentImgFileUri = currentImgUri?.let { if (it.scheme == "file") it else null } // Only file URIs can be directly compared
+                        val existingImgFileUri = Uri.fromFile(File(context.filesDir, existingImgRelPath))
+                        if (currentImgUri != null && currentImgFileUri == existingImgFileUri) { // Image kept
+                            contentBuilder.appendLine("$IMAGE_URI_MARKER$existingImgRelPath")
+                        } else if (currentImgUri == null) { /* Image cleared */ }
+                        // Note: Replacing an image in edit mode is not directly handled by this simple logic.
+                        // Assumes image is either kept as is, or cleared. New image capture is for new entries.
+                    }
+                    contentBuilder.append(currentText)
+                    finalContent = contentBuilder.toString()
+                    overwriteTextFileInternal(context, currentEditPath, finalContent)
+                    localSaveOk = true; Log.i("JournalVM", "Updated locally: $currentEditPath")
+                } else { // New Entry
+                    var imgRelPath: String? = null
+                    if (currentImgUri != null) {
+                        imgRelPath = copyImageToInternalStorageInternal(context, currentImgUri)
+                        if (imgRelPath != null) contentBuilder.appendLine("$IMAGE_URI_MARKER$imgRelPath")
+                        else Log.e("JournalVM", "New entry img copy fail")
+                    }
+                    contentBuilder.append(currentText)
+                    finalContent = contentBuilder.toString()
+                    val savedFName = saveTextToNewFileInternal(context, finalContent)
+                    entryId = savedFName.substringAfter("journal_").removeSuffix(".txt")
+                    localSaveOk = true; Log.i("JournalVM", "New entry saved locally: $savedFName")
+                }
+                if (localSaveOk && entryId != null && finalContent != null) {
+                    if (saveEntryToRemote(context, entryId, finalContent)) {
+                        Log.i("JournalVM", "$entryId also saved to remote.")
                     } else {
-                        // New Entry Mode
-                        var imageRelPath: String? = null
-                        if (currentImageUri != null) {
-                            imageRelPath = copyImageToInternalStorage(context, currentImageUri)
-                            if (imageRelPath != null) {
-                                contentBuilder.appendLine("$IMAGE_URI_MARKER$imageRelPath")
-                            } else {
-                                Log.e("JournalViewModel", "Save New: Failed image copy")
-                            }
-                        }
-                        contentBuilder.append(currentText)
-                        saveTextToNewFile(context, contentBuilder.toString()) // Return filename
+                        Log.w("JournalVM", "$entryId remote save fail. Saved locally.")
+                        withContext(Dispatchers.Main) { Toast.makeText(context, "Saved locally. Cloud sync failed.", Toast.LENGTH_LONG).show() }
                     }
                 }
-                success = true
-                Log.i("JournalViewModel", "Entry ${if(wasEditing) "updated" else "saved"}: $savedIdentifier")
-
             } catch (e: Exception) {
-                Log.e("JournalViewModel", "Save/Update error", e)
-                withContext(Dispatchers.Main) { Toast.makeText(context, "Error saving entry", Toast.LENGTH_LONG).show() }
+                Log.e("JournalVM", "Save/Update error", e)
+                withContext(Dispatchers.Main) { Toast.makeText(context, "Error saving", Toast.LENGTH_LONG).show() }
+                localSaveOk = false
             } finally {
                 withContext(Dispatchers.Main) {
-                    val finalSuccess = success
-                    if (finalSuccess) {
-                        Toast.makeText(context, "Entry ${if (wasEditing) "updated" else "saved"}!", Toast.LENGTH_SHORT).show()
-                        clearJournalState() // Clear state fully only on success
-                    } else {
-                        _isSaving.value = false
-                    }
-                    onComplete(finalSuccess, wasEditing)
+                    if (localSaveOk) { Toast.makeText(context, "Entry ${if(wasEditing) "updated" else "saved"}!", Toast.LENGTH_SHORT).show(); clearJournalState() }
+                    _isSaving.value = false; onComplete(localSaveOk, wasEditing)
                 }
             }
         }
     }
 
-    private suspend fun readJournalEntryFromFile(context: Context, filePath: String): Pair<String?, String?> = withContext(Dispatchers.IO) {
-        val entryFile = File(filePath)
-        if (!entryFile.exists() || !entryFile.isFile) throw IOException("Entry file not found: $filePath")
-
-        return@withContext try {
-            val lines = entryFile.readLines()
-            val imageLine = lines.firstOrNull { it.startsWith(IMAGE_URI_MARKER) }
-            val imagePath = imageLine?.substringAfter(IMAGE_URI_MARKER)?.trim()
-            val textContent = lines.drop(if (imageLine != null) 1 else 0).joinToString("\n")
-            Pair(imagePath, textContent)
-        } catch (e: Exception) {
-            Log.e("ReadFromFile", "Error reading: $filePath", e)
-            throw e
-        }
+    // Internal file helpers (renamed to avoid conflict if ArchiveFunctionality.kt is kept temporarily)
+    private suspend fun readJournalEntryFromFileInternal(context: Context, filePath: String): Pair<String?, String?> = withContext(Dispatchers.IO) {
+        val entryFile = File(filePath); if (!entryFile.exists()) throw IOException("File not found $filePath")
+        val lines = entryFile.readLines()
+        val imagePath = extractImagePathFromContent(lines.joinToString("\n"))
+        val text = lines.filterNot { it.startsWith(IMAGE_URI_MARKER) }.joinToString("\n")
+        return@withContext Pair(imagePath, text)
     }
-
-    private suspend fun copyImageToInternalStorage(context: Context, sourceUri: Uri): String? = withContext(Dispatchers.IO) {
-        val imageDir = File(context.filesDir, JOURNAL_IMAGE_DIR)
-        if (!imageDir.exists() && !imageDir.mkdirs()) {
-            Log.e("JournalViewModel", "Failed image dir creation")
-            return@withContext null
-        }
-        val timestamp = LocalDateTime.now().format(filenameDateTimeFormatter)
-        val destFile = File(imageDir, "IMG_$timestamp.jpg")
-        try {
-            context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            return@withContext "${JOURNAL_IMAGE_DIR}/${destFile.name}" // Relative path
-        } catch (e: Exception) {
-            Log.e("JournalViewModel", "Image copy failed", e)
-            destFile.delete() // Attempt cleanup
-            return@withContext null
-        }
+    private suspend fun copyImageToInternalStorageInternal(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+        val imgDir = File(context.filesDir, JOURNAL_IMAGE_DIR); if (!imgDir.exists()) imgDir.mkdirs()
+        val ts = LocalDateTime.now().format(filenameDateTimeFormatter)
+        val dest = File(imgDir, "IMG_$ts.jpg")
+        try { context.contentResolver.openInputStream(uri)?.use {i->FileOutputStream(dest).use{o->i.copyTo(o)}}; return@withContext "$JOURNAL_IMAGE_DIR/${dest.name}"
+        } catch(e:Exception){Log.e("JournalVM","Img copy fail internal",e); dest.delete(); return@withContext null}
     }
-
-    private suspend fun saveTextToNewFile(context: Context, content: String): String = withContext(Dispatchers.IO) {
-        val journalDir = File(context.filesDir, JOURNAL_DIR)
-        if (!journalDir.exists() && !journalDir.mkdirs()) throw IOException("Failed journal dir creation")
-        val timestamp = LocalDateTime.now().format(filenameDateTimeFormatter)
-        val file = File(journalDir, "journal_$timestamp.txt")
-        try {
-            file.writeText(content)
-            return@withContext file.name
-        } catch (e: Exception) { throw e }
+    private suspend fun saveTextToNewFileInternal(context: Context, content: String): String = withContext(Dispatchers.IO) {
+        val jDir = File(context.filesDir, JOURNAL_DIR); if(!jDir.exists()) jDir.mkdirs()
+        val ts = LocalDateTime.now().format(filenameDateTimeFormatter)
+        val file = File(jDir, "journal_$ts.txt")
+        file.writeText(content); return@withContext file.name
     }
-
-    private suspend fun overwriteTextFile(context: Context, filePath: String, content: String) = withContext(Dispatchers.IO) {
-        val file = File(filePath)
-        if (!file.exists()) throw IOException("Overwrite target not found: $filePath")
-        try {
-            file.writeText(content)
-        } catch (e: Exception) { throw e }
+    private suspend fun overwriteTextFileInternal(context: Context, path: String, content: String) = withContext(Dispatchers.IO) {
+        File(path).writeText(content)
     }
 }

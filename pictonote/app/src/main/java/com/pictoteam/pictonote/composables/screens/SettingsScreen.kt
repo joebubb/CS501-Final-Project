@@ -1,75 +1,93 @@
-// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/composables/screens/SettingsScreen.kt
 package com.pictoteam.pictonote.composables.screens
 
+import android.app.Activity
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext // Changed from LocalView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pictoteam.pictonote.datastore.SettingsDataStoreManager
 import com.pictoteam.pictonote.model.SettingsViewModel
+import com.pictoteam.pictonote.database.checkFirestoreDatabaseConfigured
+import com.pictoteam.pictonote.database.synchronizeAllJournalEntries
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// Helper extension function to find Activity from Context
-// This should be defined at the top level of the file or in a utility file.
+// Helper extension function
 fun android.content.Context.findActivity(): android.app.Activity {
-    var context = this
-    while (context is android.content.ContextWrapper) {
-        if (context is android.app.Activity) return context
-        context = context.baseContext
+    var ctx = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
     }
-    throw IllegalStateException("Cannot find activity from this context: $this. Ensure this Composable is hosted in an Activity.")
+    throw IllegalStateException("Activity not found from context $this. Ensure this Composable is hosted in an Activity.")
 }
-
 
 @Composable
 fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
     val notificationFrequencies = listOf("Daily", "Weekly", "Bi-Weekly", "Monthly", "Never")
 
-    // Get the Activity using the LocalContext and the extension function
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() } // Remember to avoid re-finding on each recomposition
+    val activity = remember(context) { context.findActivity() }
+
+    val scope = rememberCoroutineScope()
+    var isSyncing by remember { mutableStateOf(false) }
+    var syncStatusMessage by remember { mutableStateOf<String?>(null) }
+    var currentSyncPhase by remember { mutableStateOf("") }
+    var showDbSetupDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (!checkFirestoreDatabaseConfigured(context)) {
+            showDbSetupDialog = true
+        }
+    }
+
+    if (showDbSetupDialog) {
+        AlertDialog(
+            onDismissRequest = { showDbSetupDialog = false },
+            title = { Text("Database Setup Required") },
+            text = { Text("Your Firebase Firestore database is not set up or accessible. Please ensure it's created (in Native mode) and security rules allow access.") },
+            confirmButton = { TextButton(onClick = { showDbSetupDialog = false }) { Text("OK") } }
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        Divider()
+        Spacer(Modifier.height(16.dp)); Divider(); Spacer(Modifier.height(16.dp))
 
         SettingItem(title = "Dark Mode", description = "Enable dark theme for the app") {
-            Switch(
-                checked = settings.isDarkMode,
-                onCheckedChange = { settingsViewModel.updateDarkMode(it) }
-            )
+            Switch(checked = settings.isDarkMode, onCheckedChange = { settingsViewModel.updateDarkMode(it) })
         }
-        Divider()
+        Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
         FontSizeSetting(
             currentSizeSp = settings.baseFontSize,
-            onSizeChange = { settingsViewModel.updateBaseFontSize(it) }
+            onSizeChange = { newSize -> settingsViewModel.updateBaseFontSize(newSize) }
         )
-        Divider()
+        Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
         SettingItem(title = "Push Notifications", description = "Receive reminders and updates") {
-            Switch(
-                checked = settings.notificationsEnabled,
-                onCheckedChange = { settingsViewModel.updateNotificationsEnabled(it) }
-            )
+            Switch(checked = settings.notificationsEnabled, onCheckedChange = { settingsViewModel.updateNotificationsEnabled(it) })
         }
-
         if (settings.notificationsEnabled) {
             NotificationFrequencySetting(
                 frequencies = notificationFrequencies,
@@ -82,37 +100,92 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 "Enable push notifications to set frequency.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
-        Divider()
+        Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(16.dp))
 
-        Spacer(Modifier.weight(1f))
+        Text("Cloud Sync", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Backup & sync journal entries and images.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(12.dp))
 
-        Button(
-            onClick = { settingsViewModel.logoutUser(activity) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
+        syncStatusMessage?.let {
+            val isError = it.contains("Error", ignoreCase = true) || it.contains("Failed", ignoreCase = true)
+            val isSuccess = it.contains("Complete", ignoreCase = true) && !isError
+            val textColor = when {
+                isError -> MaterialTheme.colorScheme.error
+                isSuccess -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant // Neutral for in-progress
+            }
+            Text(
+                it, style = MaterialTheme.typography.bodyMedium,
+                color = textColor,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             )
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Logout,
-                contentDescription = "Log Out Icon",
-                modifier = Modifier.size(ButtonDefaults.IconSize)
-            )
-            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-            Text("Log Out", fontWeight = FontWeight.Bold)
         }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    if (!isSyncing) {
+                        isSyncing = true; currentSyncPhase = ""; syncStatusMessage = "Preparing sync..."
+                        scope.launch {
+                            if (!checkFirestoreDatabaseConfigured(context)) {
+                                showDbSetupDialog = true; isSyncing = false; syncStatusMessage = "Error: Database not configured."; return@launch
+                            }
+                            synchronizeAllJournalEntries(context,
+                                onPhaseChange = { phase -> currentSyncPhase = phase; syncStatusMessage = "$phase..." },
+                                onProgress = { phase, current, total -> syncStatusMessage = "$phase ($current/$total)" },
+                                onComplete = { totalUniqueEntries, totalSuccessfullySynced ->
+                                    isSyncing = false; currentSyncPhase = ""
+                                    val failures = totalUniqueEntries - totalSuccessfullySynced
+                                    syncStatusMessage = if (totalUniqueEntries > 0) {
+                                        "Sync Complete: $totalSuccessfullySynced/$totalUniqueEntries files handled."
+                                    } else {
+                                        "Sync Complete: No files needed syncing."
+                                    }
+                                    if (failures > 0) {
+                                        syncStatusMessage += " ($failures had issues)"
+                                    }
+                                }
+                            )
+                        }
+                    }
+                },
+                enabled = !isSyncing,
+                modifier = Modifier.weight(1f)
+            ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(Modifier.size(20.dp), MaterialTheme.colorScheme.onPrimary, 2.dp)
+                    Spacer(Modifier.width(8.dp)); Text("Syncing...")
+                } else {
+                    Icon(Icons.Default.CloudSync, "Sync"); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Sync")
+                }
+            }
+
+            Button(
+                onClick = { settingsViewModel.logoutUser(activity) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Logout, "Logout"); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Log Out")
+            }
+        }
+        Spacer(Modifier.weight(1f)) // Pushes the button row up if content is short.
+        // Remove or adjust if you want buttons higher.
     }
 }
 
-// SettingItem, FontSizeSetting, NotificationFrequencySetting composables remain UNCHANGED
-// ... (paste the existing SettingItem, FontSizeSetting, NotificationFrequencySetting here)
 @Composable
 fun SettingItem(
     title: String,

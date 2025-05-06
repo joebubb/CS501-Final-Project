@@ -15,7 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalLayoutDirection // Added for padding calculation
+import androidx.compose.ui.platform.LocalContext // Added for auto-sync context
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,14 +26,19 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import com.google.firebase.auth.FirebaseAuth
 import com.pictoteam.pictonote.composables.screens.ArchiveScreen
 import com.pictoteam.pictonote.composables.screens.HomeScreen
 import com.pictoteam.pictonote.composables.screens.JournalScreen
 import com.pictoteam.pictonote.composables.screens.SettingsScreen
 import com.pictoteam.pictonote.composables.screens.ViewEntryScreen
 import com.pictoteam.pictonote.constants.*
+import com.pictoteam.pictonote.database.checkFirestoreDatabaseConfigured
+import com.pictoteam.pictonote.database.fetchAndSyncRemoteEntriesToLocal
 import com.pictoteam.pictonote.model.SettingsViewModel
 import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,11 +47,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
-
-            PictoNoteTheme(
-                darkTheme = settings.isDarkMode,
-                baseFontSize = settings.baseFontSize
-            ) {
+            PictoNoteTheme(darkTheme = settings.isDarkMode, baseFontSize = settings.baseFontSize) {
                 ApplyEdgeToEdge()
                 PictoNoteApp()
             }
@@ -68,6 +70,7 @@ private fun ApplyEdgeToEdge() {
 fun PictoNoteApp() {
     val navController = rememberNavController()
     var isCameraPreviewActive by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val configuration = LocalConfiguration.current
     val smallestScreenWidthDp = configuration.smallestScreenWidthDp
@@ -85,51 +88,55 @@ fun PictoNoteApp() {
     }
 
     val onJournalScreenAndCameraActive = currentRoute?.startsWith(ROUTE_JOURNAL) == true && isCameraPreviewActive
+    val showBottomBar = !(isPhone && isLandscape || !isPhone && isLandscape && onJournalScreenAndCameraActive)
 
-    val showBottomBar = when {
-        isPhone && isLandscape -> false
-        !isPhone && isLandscape && onJournalScreenAndCameraActive -> false
-        else -> true
+
+    val firebaseAuth = FirebaseAuth.getInstance()
+    var initialSyncTriggered by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(firebaseAuth.currentUser, initialSyncTriggered) {
+        val user = firebaseAuth.currentUser
+        if (user != null && !initialSyncTriggered) {
+            Log.d("PictoNoteApp", "User signed in. Checking DB and triggering initial remote entries fetch.")
+            initialSyncTriggered = true
+            coroutineScope.launch {
+                delay(2000)
+                if (checkFirestoreDatabaseConfigured(context)) {
+                    fetchAndSyncRemoteEntriesToLocal(
+                        context = context,
+                        onComplete = { successCount, failureCount ->
+                            Log.i("PictoNoteApp", "Initial fetch complete. Synced: $successCount, Failed: $failureCount")
+                        }
+                    )
+                } else {
+                    Log.w("PictoNoteApp", "Initial fetch skipped: Firestore DB not configured.")
+                }
+            }
+        } else if (user == null) {
+            initialSyncTriggered = false
+        }
     }
 
     Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                BottomNavigationBar(navController)
-            }
-        }
+        bottomBar = { if (showBottomBar) BottomNavigationBar(navController) }
     ) { innerPadding ->
-        // Conditionally adjust top padding for the main content area
         val actualTopPadding = if (isCameraPreviewActive) 0.dp else innerPadding.calculateTopPadding()
         val layoutDirection = LocalLayoutDirection.current
-
         val contentAreaPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
-            top = actualTopPadding, // Use the conditional top padding
+            top = actualTopPadding,
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = innerPadding.calculateBottomPadding()
         )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentAreaPadding) // Apply the carefully constructed padding
-        ) {
-            NavigationGraph(
-                navController = navController,
-                setCameraPreviewActive = { isActive ->
-                    if (isCameraPreviewActive != isActive) {
-                        isCameraPreviewActive = isActive
-                        Log.d("PictoNoteApp", "isCameraPreviewActive set to: $isActive")
-                    }
-                }
+        Box(modifier = Modifier.fillMaxSize().padding(contentAreaPadding)) {
+            NavigationGraph(navController = navController,
+                setCameraPreviewActive = { isActive -> if (isCameraPreviewActive != isActive) isCameraPreviewActive = isActive }
             )
         }
     }
 }
 
-// BottomNavigationBar, navigateTo, and NavigationGraph functions remain UNCHANGED from your last provided version.
-// Just ensure NavigationGraph passes setCameraPreviewActive to JournalScreen.
 @Composable
 fun BottomNavigationBar(navController: NavHostController) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -200,11 +207,11 @@ fun NavigationGraph(
             })
         ) { backStackEntry ->
             val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
-            JournalScreen( // Pass the callback here
+            JournalScreen(
                 navController = navController,
                 entryFilePathToEdit = encodedEntryFilePath,
                 setCameraPreviewActive = setCameraPreviewActive,
-                journalViewModel = viewModel(), // Assuming you want default VM instances
+                journalViewModel = viewModel(),
                 geminiViewModel = viewModel()
             )
         }

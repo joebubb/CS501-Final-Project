@@ -34,7 +34,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavHostController
 import coil3.compose.rememberAsyncImagePainter
 import com.pictoteam.pictonote.constants.*
-import com.pictoteam.pictonote.model.IMAGE_URI_MARKER
+import com.pictoteam.pictonote.constants.IMAGE_URI_MARKER
 import com.pictoteam.pictonote.model.JournalEntryData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -1,11 +1,13 @@
+// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/ui/theme/Theme.kt
 package com.pictoteam.pictonote.ui.theme
 
 import android.os.Build
-import kotlin.random.Random
+import kotlin.random.Random // Keep if paperTextureModifier uses it
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -13,7 +15,8 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.ReadOnlyComposable // For createScaledTypography if it's just reading
+import androidx.compose.runtime.staticCompositionLocalOf // Changed from compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -24,74 +27,39 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.pictoteam.pictonote.datastore.SettingsDataStoreManager // Import for default font size
+import com.pictoteam.pictonote.datastore.SettingsDataStoreManager
 
-// --- New Cozy Paper Color Schemes ---
+// Color schemes (CozyLightColorScheme, CozyDarkColorScheme) as before...
 private val CozyLightColorScheme = lightColorScheme(
-    primary = WarmBrown,
-    onPrimary = LightCream,
-    primaryContainer = PaleYellow,
-    onPrimaryContainer = DarkBrown,
-    secondary = SoftOrange,
-    onSecondary = LightCream,
-    secondaryContainer = Cream,
-    onSecondaryContainer = Rust,
-    tertiary = MutedGreen,
-    onTertiary = LightCream,
-    tertiaryContainer = PaleYellow,
-    onTertiaryContainer = DarkBrown,
-    background = Cream,
-    onBackground = DarkBrown,
-    surface = LightCream,
-    onSurface = DarkBrown,
-    surfaceVariant = PaleYellow,
-    onSurfaceVariant = WarmBrown,
+    primary = WarmBrown, onPrimary = LightCream, primaryContainer = PaleYellow, onPrimaryContainer = DarkBrown,
+    secondary = SoftOrange, onSecondary = LightCream, secondaryContainer = Cream, onSecondaryContainer = Rust,
+    tertiary = MutedGreen, onTertiary = LightCream, tertiaryContainer = PaleYellow, onTertiaryContainer = DarkBrown,
+    background = Cream, onBackground = DarkBrown, surface = LightCream, onSurface = DarkBrown,
+    surfaceVariant = PaleYellow, onSurfaceVariant = WarmBrown, error = Rust, onError = LightCream
 )
-
 private val CozyDarkColorScheme = darkColorScheme(
-    primary = SoftOrange,
-    onPrimary = Color(0xFF472C1B), // Darker brown
-    primaryContainer = Color(0xFF704728), // Medium brown
-    onPrimaryContainer = PaleYellow,
-    secondary = WarmBrown,
-    onSecondary = LightCream,
-    secondaryContainer = Color(0xFF704728), // Medium brown
-    onSecondaryContainer = PaleYellow,
-    tertiary = MutedGreen,
-    onTertiary = Color(0xFF2A2A2A), // Dark gray
-    tertiaryContainer = Color(0xFF4D4D4D), // Medium gray
-    onTertiaryContainer = PaleYellow,
-    background = Color(0xFF2A2A2A), // Dark gray
-    onBackground = LightCream,
-    surface = Color(0xFF3D3D3D), // Medium gray
-    onSurface = LightCream,
-    surfaceVariant = Color(0xFF472C1B), // Darker brown
-    onSurfaceVariant = PaleYellow,
+    primary = SoftOrange, onPrimary = Color(0xFF472C1B), primaryContainer = Color(0xFF704728), onPrimaryContainer = PaleYellow,
+    secondary = WarmBrown, onSecondary = LightCream, secondaryContainer = Color(0xFF704728), onSecondaryContainer = PaleYellow,
+    tertiary = MutedGreen, onTertiary = Color(0xFF2A2A2A), tertiaryContainer = Color(0xFF4D4D4D), onTertiaryContainer = PaleYellow,
+    background = Color(0xFF2A2A2A), onBackground = LightCream, surface = Color(0xFF3D3D3D), onSurface = LightCream,
+    surfaceVariant = Color(0xFF472C1B), onSurfaceVariant = PaleYellow, error = Color(0xFFFFB4AB), onError = Color(0xFF690005)
 )
 
-// --- Paper Texture System ---
-// Create a local for paper texture
-val LocalPaperTexture = compositionLocalOf { PaperTexture.NONE }
 
-// Enum for different paper textures
-enum class PaperTexture {
-    NONE,
-    SUBTLE,
-    MEDIUM,
-    ROUGH
-}
+// Paper Texture System
+val LocalPaperTexture = staticCompositionLocalOf { PaperTexture.NONE } // Use staticCompositionLocalOf if value rarely changes
 
-// --- Theme Functions ---
+enum class PaperTexture { NONE, SUBTLE, MEDIUM, ROUGH }
+
 @Composable
 fun PictoNoteTheme(
-    darkTheme: Boolean, // Passed from ViewModel/DataStore
-    baseFontSize: Float = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP, // Passed from ViewModel/DataStore
-    dynamicColor: Boolean = false, // Changed to false by default to avoid potential resource conflicts
-    useCozyTheme: Boolean = false, // New parameter to toggle cozy paper theme
-    paperTexture: PaperTexture = PaperTexture.MEDIUM, // Paper texture level
+    darkTheme: Boolean,
+    baseFontSize: Float = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP, // Default from DataStoreManager
+    dynamicColor: Boolean = false,
+    useCozyTheme: Boolean = true, // Defaulting to cozy theme as per your setup
+    paperTexture: PaperTexture = PaperTexture.MEDIUM,
     content: @Composable () -> Unit
 ) {
-    // 1. Determine Color Scheme
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
@@ -99,36 +67,33 @@ fun PictoNoteTheme(
         }
         useCozyTheme && darkTheme -> CozyDarkColorScheme
         useCozyTheme -> CozyLightColorScheme
-        darkTheme -> CozyDarkColorScheme
-        else -> CozyLightColorScheme
+        darkTheme -> CozyDarkColorScheme // Fallback to CozyDark if not specific
+        else -> CozyLightColorScheme    // Fallback to CozyLight
     }
 
-    // 2. Calculate Font Size Multiplier
-    val defaultBaseSp = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP
-    val fontSizeMultiplier = if (defaultBaseSp > 0) baseFontSize / defaultBaseSp else 1.0f
+    // Create Typography based on the current baseFontSize
+    val typography = createScaledTypography(baseFontSize) // Pass the actual baseFontSize
 
-    // 3. Create Scaled Typography
-    val typography = createScaledTypography(fontSizeMultiplier)
-
-    // 4. Apply Theme with or without paper texture
     CompositionLocalProvider(LocalPaperTexture provides paperTexture) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = typography,
+            typography = typography, // Use the dynamically scaled typography
             content = {
                 if (useCozyTheme) {
                     PaperBackground(modifier = Modifier.fillMaxSize()) {
                         content()
                     }
                 } else {
-                    content()
+                    // Provide a default background if not using paper texture
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        content()
+                    }
                 }
             }
         )
     }
 }
 
-// Paper background component that applies texture
 @Composable
 fun PaperBackground(
     modifier: Modifier = Modifier,
@@ -138,77 +103,43 @@ fun PaperBackground(
     Box(
         modifier = modifier
             .background(MaterialTheme.colorScheme.background)
-            .paperTextureModifier(paperTexture)
+            .paperTextureModifier(paperTexture) // Apply texture if any
     ) {
         content()
     }
 }
 
-// Extension function to apply paper texture
 fun Modifier.paperTextureModifier(paperTexture: PaperTexture): Modifier {
+    // paperTextureModifier implementation as before...
     return when (paperTexture) {
         PaperTexture.NONE -> this
         PaperTexture.SUBTLE -> this.drawBehind {
-            // Draw subtle noise pattern
             val noiseOpacity = 0.03f
             for (i in 0..200) {
-                val x = Random.nextFloat() * size.width
-                val y = Random.nextFloat() * size.height
-                val radius = 1f + Random.nextFloat() * 1f // Random between 1-2
-                drawCircle(
-                    color = Color.Black.copy(alpha = noiseOpacity),
-                    radius = radius,
-                    center = Offset(x, y)
-                )
+                val x = Random.nextFloat() * size.width; val y = Random.nextFloat() * size.height
+                val radius = 1f + Random.nextFloat() * 1f
+                drawCircle(Color.Black.copy(alpha = noiseOpacity), radius, Offset(x, y))
             }
         }
         PaperTexture.MEDIUM -> this.drawBehind {
-            // Draw medium noise pattern
             val noiseOpacity = 0.05f
             for (i in 0..400) {
-                val x = Random.nextFloat() * size.width
-                val y = Random.nextFloat() * size.height
-                val radius = 1f + Random.nextFloat() * 2f // Random between 1-3
-                drawCircle(
-                    color = Color.Black.copy(alpha = noiseOpacity),
-                    radius = radius,
-                    center = Offset(x, y)
-                )
+                val x = Random.nextFloat() * size.width; val y = Random.nextFloat() * size.height
+                val radius = 1f + Random.nextFloat() * 2f
+                drawCircle(Color.Black.copy(alpha = noiseOpacity), radius, Offset(x, y))
             }
-            // Add subtle gradient
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.03f)
-                    ),
-                    center = Offset(size.width / 2, size.height / 2),
-                    radius = size.width * 0.7f
-                )
-            )
+            drawRect(brush = Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.03f)), Offset(size.width / 2, size.height / 2), size.width * 0.7f))
         }
         PaperTexture.ROUGH -> this.drawBehind {
-            // Draw rough texture
             val noiseOpacity = 0.07f
             for (i in 0..600) {
-                val x = Random.nextFloat() * size.width
-                val y = Random.nextFloat() * size.height
-                val radius = 1f + Random.nextFloat() * 3f // Random between 1-4
-                drawCircle(
-                    color = Color.Black.copy(alpha = noiseOpacity),
-                    radius = radius,
-                    center = Offset(x, y)
-                )
+                val x = Random.nextFloat() * size.width; val y = Random.nextFloat() * size.height
+                val radius = 1f + Random.nextFloat() * 3f
+                drawCircle(Color.Black.copy(alpha = noiseOpacity), radius, Offset(x, y))
             }
-            // Add grain lines
             for (i in 0..40) {
                 val y = Random.nextFloat() * size.height
-                drawLine(
-                    color = Color.Black.copy(alpha = 0.02f),
-                    start = Offset(0f, y),
-                    end = Offset(size.width, y),
-                    strokeWidth = 0.5f + Random.nextFloat() * 1.0f // Random between 0.5-1.5
-                )
+                drawLine(Color.Black.copy(alpha = 0.02f), Offset(0f, y), Offset(size.width, y), 0.5f + Random.nextFloat() * 1.0f)
             }
         }
     }
