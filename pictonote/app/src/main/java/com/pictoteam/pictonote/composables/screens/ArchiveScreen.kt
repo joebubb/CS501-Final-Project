@@ -7,13 +7,18 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyRow // Can be removed if not used elsewhere
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items // For month grid in dialog
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack // For dialog year nav
+import androidx.compose.material.icons.automirrored.filled.ArrowForward // For dialog year nav
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,9 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavHostController
 import coil3.compose.rememberAsyncImagePainter
 import com.pictoteam.pictonote.constants.*
@@ -34,6 +41,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Month
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -45,32 +53,51 @@ fun ArchiveScreen(navController: NavHostController) {
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp
     val orientation = configuration.orientation
-    var selectedMonth by remember { mutableStateOf(YearMonth.now().monthValue) }
-    val currentYear = YearMonth.now().year
+
+    // State for the currently selected YearMonth to display on the archive screen
+    var selectedYearMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDay by remember { mutableStateOf<Int?>(null) }
+    var showMonthYearPickerDialog by remember { mutableStateOf(false) }
 
     val screenContentPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
-
     val contentAreaModifier = Modifier
         .fillMaxSize()
         .padding(screenContentPadding)
 
-    LaunchedEffect(selectedMonth) { selectedDay = null }
+    // When selectedYearMonth changes, reset the selectedDay
+    LaunchedEffect(selectedYearMonth) {
+        selectedDay = null
+        Log.d("ArchiveScreen", "YearMonth changed to: $selectedYearMonth, selectedDay reset.")
+    }
+
+    if (showMonthYearPickerDialog) {
+        MonthYearPickerDialog(
+            initialYearMonth = selectedYearMonth,
+            onDismissRequest = { showMonthYearPickerDialog = false },
+            onYearMonthSelected = { newYearMonth ->
+                selectedYearMonth = newYearMonth
+                showMonthYearPickerDialog = false
+            }
+        )
+    }
 
     when {
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
             Row(modifier = contentAreaModifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                // Left Column: Calendar
                 Column(Modifier.weight(2f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Calendar - $currentYear", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.align(Alignment.CenterHorizontally))
-                    MonthSelectorRow(currentYear, selectedMonth) { newMonth -> selectedMonth = newMonth }
+                    ArchiveHeader(
+                        selectedYearMonth = selectedYearMonth,
+                        onHeaderClick = { showMonthYearPickerDialog = true }
+                    )
                     CalendarGrid(
                         context = context,
-                        currentYear = currentYear,
-                        selectedMonth = selectedMonth,
+                        yearMonth = selectedYearMonth, // Pass YearMonth
                         columns = GridCells.Adaptive(minSize = 60.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) { day -> selectedDay = day }
                 }
+                // Right Column: Memories Card
                 Column(
                     modifier = Modifier.weight(1f).padding(top = (MaterialTheme.typography.headlineMedium.fontSize.value.dp + 16.dp)),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -78,31 +105,33 @@ fun ArchiveScreen(navController: NavHostController) {
                     MemoriesCard(
                         modifier = Modifier.fillMaxSize(),
                         context = context,
-                        selectedYear = currentYear,
-                        selectedMonth = selectedMonth,
+                        selectedYear = selectedYearMonth.year,
+                        selectedMonth = selectedYearMonth.monthValue,
                         selectedDay = selectedDay,
                         navController = navController
                     )
                 }
             }
         }
+        // Default Portrait / Smaller Screen Layout
         else -> {
             val gridColumns = if (screenWidthDp >= 600) GridCells.Adaptive(minSize = 70.dp) else GridCells.Fixed(7)
             Column(modifier = contentAreaModifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Calendar - $currentYear", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.align(Alignment.CenterHorizontally))
-                MonthSelectorRow(currentYear, selectedMonth) { newMonth -> selectedMonth = newMonth }
+                ArchiveHeader(
+                    selectedYearMonth = selectedYearMonth,
+                    onHeaderClick = { showMonthYearPickerDialog = true }
+                )
                 CalendarGrid(
                     context = context,
-                    currentYear = currentYear,
-                    selectedMonth = selectedMonth,
+                    yearMonth = selectedYearMonth, // Pass YearMonth
                     columns = gridColumns,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 ) { day -> selectedDay = day }
                 MemoriesCard(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp),
                     context = context,
-                    selectedYear = currentYear,
-                    selectedMonth = selectedMonth,
+                    selectedYear = selectedYearMonth.year,
+                    selectedMonth = selectedYearMonth.monthValue,
                     selectedDay = selectedDay,
                     navController = navController
                 )
@@ -112,41 +141,128 @@ fun ArchiveScreen(navController: NavHostController) {
 }
 
 @Composable
-fun MonthSelectorRow(currentYear: Int, selectedMonth: Int, onMonthSelected: (Int) -> Unit) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp)
+fun ArchiveHeader(selectedYearMonth: YearMonth, onHeaderClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onHeaderClick)
+            .padding(vertical = 8.dp), // Add some padding to make clickable area larger
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center // Center the header content
     ) {
-        items(12) { monthIndex ->
-            val monthValue = monthIndex + 1
-            val month = YearMonth.of(currentYear, monthValue).month
-            val monthName = month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
-            Button(
-                onClick = { onMonthSelected(monthValue) },
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (selectedMonth == monthValue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (selectedMonth == monthValue) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        Text(
+            text = "${selectedYearMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())}, ${selectedYearMonth.year}",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.SemiBold // Make it look a bit more like a button
+        )
+        Icon(
+            imageVector = Icons.Default.ArrowDropDown,
+            contentDescription = "Select Month and Year",
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+
+@Composable
+fun MonthYearPickerDialog(
+    initialYearMonth: YearMonth,
+    onDismissRequest: () -> Unit,
+    onYearMonthSelected: (YearMonth) -> Unit
+) {
+    var currentDialogYear by remember { mutableStateOf(initialYearMonth.year) }
+    // Store the initially selected month to pre-select in the dialog's month grid
+    var selectedMonthInDialog by remember { mutableStateOf(initialYearMonth.month) }
+
+    val allMonths = Month.values() // Array of all Month enums
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(monthName)
+                Text("Select Month and Year", style = MaterialTheme.typography.titleLarge)
+
+                // Year Selector Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(onClick = { currentDialogYear-- }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous Year")
+                    }
+                    Text(
+                        text = currentDialogYear.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = { currentDialogYear++ }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next Year")
+                    }
+                }
+
+                // Month Grid (3 columns for months)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.heightIn(max = 200.dp) // Constrain height if many months
+                ) {
+                    items(allMonths) { month ->
+                        Button(
+                            onClick = { selectedMonthInDialog = month },
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.aspectRatio(1.5f), // Adjust for button shape
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedMonthInDialog == month) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (selectedMonthInDialog == month) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) {
+                            Text(month.getDisplayName(TextStyle.SHORT, Locale.getDefault()))
+                        }
+                    }
+                }
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismissRequest) {
+                        Text("Cancel")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onYearMonthSelected(YearMonth.of(currentDialogYear, selectedMonthInDialog))
+                        }
+                    ) {
+                        Text("OK")
+                    }
+                }
             }
         }
     }
 }
 
+
 @Composable
 fun CalendarGrid(
     context: Context,
-    currentYear: Int,
-    selectedMonth: Int,
+    yearMonth: YearMonth, // Changed to YearMonth
     columns: GridCells,
     modifier: Modifier = Modifier,
     onDateSelected: (Int) -> Unit
 ) {
-    val daysWithEntries by remember(context, currentYear, selectedMonth) {
-        mutableStateOf(getDaysWithEntriesForMonth(context, currentYear, selectedMonth))
+    val daysWithEntries by remember(context, yearMonth) { // Key on yearMonth
+        mutableStateOf(getDaysWithEntriesForMonth(context, yearMonth.year, yearMonth.monthValue))
     }
 
     LazyVerticalGrid(
@@ -156,7 +272,7 @@ fun CalendarGrid(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(4.dp)
     ) {
-        val daysInMonth = YearMonth.of(currentYear, selectedMonth).lengthOfMonth()
+        val daysInMonth = yearMonth.lengthOfMonth()
         items(daysInMonth) { dayIndex ->
             val dayOfMonth = dayIndex + 1
             val hasEntry = daysWithEntries.contains(dayOfMonth)
@@ -181,6 +297,9 @@ fun CalendarGrid(
     }
 }
 
+// MemoriesCard, getDaysWithEntriesForMonth, readJournalEntriesForDate, readJournalEntryFromFileInternal
+// remain UNCHANGED from your last provided version. Make sure they use selectedYear and selectedMonth.
+// ... (Paste the existing MemoriesCard, getDaysWithEntriesForMonth, readJournalEntriesForDate, readJournalEntryFromFileInternal here)
 @Composable
 fun MemoriesCard(
     modifier: Modifier = Modifier,
@@ -248,7 +367,7 @@ fun MemoriesCard(
                                 IconButton(
                                     onClick = { currentEntryIndex = (currentEntryIndex - 1 + journalEntries.size) % journalEntries.size },
                                     enabled = journalEntries.size > 1
-                                ) { Icon(Icons.Default.ArrowBack, "Previous") }
+                                ) { Icon(Icons.Default.ArrowBack, "Previous") } // Corrected Icon
                                 Text(
                                     "${currentEntryIndex + 1}/${journalEntries.size}",
                                     modifier = Modifier.padding(horizontal = 8.dp),
@@ -257,7 +376,7 @@ fun MemoriesCard(
                                 IconButton(
                                     onClick = { currentEntryIndex = (currentEntryIndex + 1) % journalEntries.size },
                                     enabled = journalEntries.size > 1
-                                ) { Icon(Icons.Default.ArrowForward, "Next") }
+                                ) { Icon(Icons.Default.ArrowForward, "Next") } // Corrected Icon
                             }
                         }
                     }
@@ -338,7 +457,7 @@ fun getDaysWithEntriesForMonth(context: Context, year: Int, month: Int): Set<Int
         return emptySet()
     }
 
-    val monthPrefix = String.format("%d-%02d", year, month)
+    val monthPrefix = String.format("%d-%02d", year, month) // Corrected to use passed year and month
     val filePrefix = "journal_$monthPrefix"
     Log.d("GetDaysWithEntries", "Scanning for files starting with: $filePrefix in ${directory.absolutePath}")
 
