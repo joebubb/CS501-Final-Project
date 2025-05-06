@@ -4,13 +4,13 @@ import android.app.Activity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll // Standard vertical scroll
+import androidx.compose.foundation.verticalScroll // Enables scrolling for settings that may not fit screen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable // Added import
+import androidx.compose.runtime.saveable.rememberSaveable // Preserves state during configuration changes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -27,7 +27,8 @@ import com.pictoteam.pictonote.database.synchronizeAllJournalEntries
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// Helper extension function
+// Extension function to find the activity from any context
+// Useful for operations that require an Activity reference, like logging out
 fun android.content.Context.findActivity(): android.app.Activity {
     var ctx = this
     while (ctx is android.content.ContextWrapper) {
@@ -37,15 +38,22 @@ fun android.content.Context.findActivity(): android.app.Activity {
     throw IllegalStateException("Activity not found from context $this. Ensure this Composable is hosted in an Activity.")
 }
 
+/**
+ * Main Settings screen composable that displays all user configurable options
+ * Handles theme, font size, notifications, cloud sync and logout functionality
+ */
 @Composable
 fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
+    // Collect settings as state with lifecycle awareness to prevent unnecessary recompositions
     val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
     val notificationFrequencies = listOf("Daily", "Weekly", "Bi-Weekly", "Monthly", "Never")
 
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
+    // Coroutine scope for async operations like cloud sync
     val scope = rememberCoroutineScope()
+    // Track sync state to update UI appropriately
     var isSyncing by rememberSaveable { mutableStateOf(false) }
     var syncStatusMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var currentSyncPhase by rememberSaveable { mutableStateOf("") }
@@ -53,13 +61,15 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
 
     val scrollState = rememberScrollState()
 
+    // Check Firebase configuration on initial composition
     LaunchedEffect(Unit) {
         if (!checkFirestoreDatabaseConfigured(context)) {
-            // Only show dialog if not already shown due to saved state
+            // Only show the dialog if it's not already visible
             if (!showDbSetupDialog) showDbSetupDialog = true
         }
     }
 
+    // Database setup error dialog
     if (showDbSetupDialog) {
         AlertDialog(
             onDismissRequest = { showDbSetupDialog = false },
@@ -69,6 +79,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         )
     }
 
+    // Main settings layout with vertical scrolling
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -78,17 +89,20 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp)); Divider(); Spacer(Modifier.height(16.dp))
 
+        // Dark mode toggle
         SettingItem(title = "Dark Mode", description = "Enable dark theme for the app") {
             Switch(checked = settings.isDarkMode, onCheckedChange = { settingsViewModel.updateDarkMode(it) })
         }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
+        // Font size adjustment slider
         FontSizeSetting(
             currentSizeSp = settings.baseFontSize,
             onSizeChange = { newSize -> settingsViewModel.updateBaseFontSize(newSize) }
         )
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
+        // Auto-sync toggle for journal entries
         SettingItem(
             title = "Auto-Sync Entries",
             description = "Automatically sync entries when saved or updated."
@@ -100,16 +114,19 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
+        // Push notifications toggle and frequency selection
         SettingItem(title = "Push Notifications", description = "Receive reminders and updates") {
             Switch(checked = settings.notificationsEnabled, onCheckedChange = { settingsViewModel.updateNotificationsEnabled(it) })
         }
         if (settings.notificationsEnabled) {
+            // Only show notification frequency options if notifications are enabled
             NotificationFrequencySetting(
                 frequencies = notificationFrequencies,
                 selectedFrequency = settings.notificationFrequency,
                 onFrequencySelected = { settingsViewModel.updateNotificationFrequency(it) }
             )
         } else {
+            // Guidance text when notifications are disabled
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Enable push notifications to set frequency.",
@@ -121,6 +138,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(16.dp))
 
+        // Manual cloud sync section
         Text("Cloud Sync", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
@@ -129,6 +147,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         )
         Spacer(Modifier.height(12.dp))
 
+        // Display sync status message with appropriate color coding based on message content
         syncStatusMessage?.let { message ->
             val hasFailedText = message.contains("failed", ignoreCase = true) || message.contains("issues", ignoreCase = true)
             val isErrorText = message.contains("Error", ignoreCase = true)
@@ -150,6 +169,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
             )
         }
 
+        // Action buttons for sync and logout
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -157,6 +177,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Sync button with progress indicator during sync
             Button(
                 onClick = {
                     if (!isSyncing) {
@@ -164,12 +185,14 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                         currentSyncPhase = ""
                         syncStatusMessage = "Preparing manual sync..."
                         scope.launch {
+                            // Verify database configuration before attempting sync
                             if (!checkFirestoreDatabaseConfigured(context)) {
                                 showDbSetupDialog = true
                                 isSyncing = false
                                 syncStatusMessage = "Error: Database not configured."
                                 return@launch
                             }
+                            // Initiate sync with progress callbacks
                             synchronizeAllJournalEntries(
                                 context = context,
                                 onPhaseChange = { phase ->
@@ -201,6 +224,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 modifier = Modifier.weight(1f)
             ) {
                 if (isSyncing && currentSyncPhase.isNotEmpty()) {
+                    // Show progress indicator while sync is active
                     CircularProgressIndicator(
                         Modifier.size(20.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -209,6 +233,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                     Spacer(Modifier.width(8.dp))
                     Text("Syncing...")
                 } else {
+                    // Standard sync button appearance
                     Icon(
                         Icons.Default.CloudSync,
                         contentDescription = "Manual Sync",
@@ -219,6 +244,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 }
             }
 
+            // Logout button with error styling
             Button(
                 onClick = { settingsViewModel.logoutUser(activity) },
                 modifier = Modifier.weight(1f),
@@ -240,6 +266,10 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     }
 }
 
+/**
+ * Reusable composable for individual settings items
+ * Displays a title, optional description, and custom content (usually a toggle)
+ */
 @Composable
 fun SettingItem(
     title: String,
@@ -263,6 +293,10 @@ fun SettingItem(
     }
 }
 
+/**
+ * Font size adjustment composable with slider
+ * Allows users to select their preferred text size within defined min/max bounds
+ */
 @Composable
 fun FontSizeSetting(
     currentSizeSp: Float,
@@ -293,6 +327,10 @@ fun FontSizeSetting(
     }
 }
 
+/**
+ * Notification frequency selector with radio buttons
+ * Only displayed when notifications are enabled
+ */
 @Composable
 fun NotificationFrequencySetting(
     frequencies: List<String>,
@@ -304,6 +342,7 @@ fun NotificationFrequencySetting(
         Spacer(Modifier.height(8.dp))
         Column {
             frequencies.forEach { frequency ->
+                // Create selectable row for each frequency option
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -317,7 +356,7 @@ fun NotificationFrequencySetting(
                 ) {
                     RadioButton(
                         selected = (frequency == selectedFrequency),
-                        onClick = null
+                        onClick = null // Click handled by the selectable modifier
                     )
                     Text(
                         text = frequency,

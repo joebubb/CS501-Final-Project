@@ -1,4 +1,3 @@
-// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/database/FirebaseSyncHelper.kt
 package com.pictoteam.pictonote.database
 
 import android.content.Context
@@ -7,9 +6,9 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toUri
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.QuerySnapshot // Import if needed, though .documents is usually available
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.storage.FirebaseStorage
-import com.pictoteam.pictonote.appFirestore // Use the extension property
+import com.pictoteam.pictonote.appFirestore
 import com.pictoteam.pictonote.constants.IMAGE_URI_MARKER
 import com.pictoteam.pictonote.constants.JOURNAL_DIR
 import com.pictoteam.pictonote.constants.JOURNAL_IMAGE_DIR
@@ -23,11 +22,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
-// FirestoreJournalEntry, checkFirestoreDatabaseConfigured, saveEntryToRemote,
-// extractImagePathFromContent, downloadImageFromRemote, saveDownloadedEntryLocally
-// functions remain THE SAME as the last version.
-// ... (paste those functions here if you need the full file context for this helper)
-
+/**
+ * Data model representing a journal entry stored in Firestore
+ *
+ * @property entryId Unique identifier for the journal entry
+ * @property content Full text content of the journal entry including image markers
+ * @property remoteImageUrl URL to the image in Firebase Storage if an image is attached
+ * @property lastModified Timestamp of last modification in milliseconds
+ */
 data class FirestoreJournalEntry(
     val entryId: String = "",
     val content: String = "",
@@ -35,6 +37,12 @@ data class FirestoreJournalEntry(
     val lastModified: Long = 0
 )
 
+/**
+ * Verifies if Firestore database is properly configured and accessible
+ *
+ * @param context Application context for accessing Firestore instance
+ * @return Boolean indicating if database is configured and accessible
+ */
 suspend fun checkFirestoreDatabaseConfigured(context: Context): Boolean {
     return suspendCoroutine { continuation ->
         try {
@@ -59,6 +67,14 @@ suspend fun checkFirestoreDatabaseConfigured(context: Context): Boolean {
     }
 }
 
+/**
+ * Uploads a journal entry to Firestore and its images to Firebase Storage
+ *
+ * @param context Application context
+ * @param uniqueEntryId Unique identifier for the entry
+ * @param localFileContent The complete text content of the entry
+ * @return Boolean indicating success or failure of the upload
+ */
 suspend fun saveEntryToRemote(context: Context, uniqueEntryId: String, localFileContent: String): Boolean {
     val user = FirebaseAuth.getInstance().currentUser ?: return false.also { Log.e("SaveRemote", "No user signed in") }
     val userId = user.uid
@@ -101,11 +117,25 @@ suspend fun saveEntryToRemote(context: Context, uniqueEntryId: String, localFile
     }
 }
 
+/**
+ * Extracts the image path from journal entry content by finding the image marker
+ *
+ * @param content The full content text of the journal entry
+ * @return The relative path to the image or null if no image is found
+ */
 fun extractImagePathFromContent(content: String): String? {
     return content.lines().firstOrNull { it.startsWith(IMAGE_URI_MARKER) }
         ?.substringAfter(IMAGE_URI_MARKER)?.trim()
 }
 
+/**
+ * Downloads an image from Firebase Storage to local storage
+ *
+ * @param context Application context
+ * @param remoteUrl The Firebase Storage URL for the image
+ * @param localImageRelativePath The relative path where the image should be stored locally
+ * @return Boolean indicating success or failure of download
+ */
 suspend fun downloadImageFromRemote(context: Context, remoteUrl: String, localImageRelativePath: String): Boolean {
     if (localImageRelativePath.isBlank()) return false.also { Log.e("DownloadImage", "Local image path is blank") }
 
@@ -139,6 +169,14 @@ suspend fun downloadImageFromRemote(context: Context, remoteUrl: String, localIm
     }
 }
 
+/**
+ * Saves a downloaded journal entry to local storage
+ *
+ * @param context Application context
+ * @param uniqueEntryId The unique identifier for the entry
+ * @param contentWithImageMarker The full content text including image markers
+ * @return Boolean indicating success or failure of the save operation
+ */
 fun saveDownloadedEntryLocally(context: Context, uniqueEntryId: String, contentWithImageMarker: String): Boolean {
     try {
         val directory = File(context.filesDir, JOURNAL_DIR)
@@ -157,7 +195,13 @@ fun saveDownloadedEntryLocally(context: Context, uniqueEntryId: String, contentW
     }
 }
 
-
+/**
+ * Fetches all remote entries and syncs them to the local device
+ *
+ * @param context Application context
+ * @param onProgress Callback to report progress (current and total counts)
+ * @param onComplete Callback executed when sync completes with success and failure counts
+ */
 suspend fun fetchAndSyncRemoteEntriesToLocal(
     context: Context,
     onProgress: (current: Int, total: Int) -> Unit = { _, _ -> },
@@ -219,7 +263,19 @@ suspend fun fetchAndSyncRemoteEntriesToLocal(
     }
 }
 
-
+/**
+ * Performs a full bidirectional synchronization of journal entries between local and remote storage
+ *
+ * This function:
+ * 1. Uploads local entries to Firestore
+ * 2. Downloads remote entries to local storage
+ * 3. Verifies sync status of all entries
+ *
+ * @param context Application context
+ * @param onPhaseChange Callback that reports which phase of sync is being performed
+ * @param onProgress Callback to report detailed progress within each phase
+ * @param onComplete Callback executed when sync completes with final counts
+ */
 suspend fun synchronizeAllJournalEntries(
     context: Context,
     onPhaseChange: (phase: String) -> Unit = {},
@@ -292,6 +348,7 @@ suspend fun synchronizeAllJournalEntries(
         }
         Log.i("SyncAll", "Download phase attempted for ${remoteDocs.size} documents.")
 
+        // Phase 3: Verify final sync status for all entries
         var finalSuccessCount = 0
         for (id in processedEntryIds) {
             val localFile = File(localJournalDir, "journal_$id.txt")
@@ -326,9 +383,6 @@ suspend fun synchronizeAllJournalEntries(
     } catch (e: Exception) {
         Log.e("SyncAll", "Full synchronization error: ${e.message}", e)
         // Fallback: report unique IDs found vs. operations that might have succeeded before error
-        var fallbackSuccessCount = 0 // Calculate a fallback based on what could be determined
-        // This is tricky, ideally we'd count successes more granularly during the process
-        // For now, using 0 for successes if a major exception occurs mid-process before final verification.
         onComplete(processedEntryIds.size, 0)
     }
 }

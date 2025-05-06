@@ -14,13 +14,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState // Import observeAsState
-import androidx.compose.runtime.saveable.rememberSaveable // Added import
+import androidx.compose.runtime.livedata.observeAsState // For observing LiveData values from ViewModel
+import androidx.compose.runtime.saveable.rememberSaveable // For preserving state across configuration changes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel // Import viewModel
+import androidx.lifecycle.viewmodel.compose.viewModel // For accessing ViewModels in Composables
 import androidx.navigation.NavHostController
 import coil3.compose.rememberAsyncImagePainter
 import com.pictoteam.pictonote.constants.ARG_ENTRY_FILE_PATH
@@ -29,7 +29,7 @@ import com.pictoteam.pictonote.constants.JOURNAL_IMAGE_DIR
 import com.pictoteam.pictonote.constants.ROUTE_JOURNAL
 import com.pictoteam.pictonote.constants.filenameDateTimeFormatter
 import com.pictoteam.pictonote.constants.viewEntryDisplayDateTimeFormatter
-import com.pictoteam.pictonote.model.GeminiViewModel // Import GeminiViewModel
+import com.pictoteam.pictonote.model.GeminiViewModel // ViewModel for AI reflection functionality
 import com.pictoteam.pictonote.model.JournalEntryData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,25 +37,31 @@ import java.io.File
 import java.io.IOException
 import java.time.LocalDateTime
 
+/**
+ * Screen for viewing a journal entry in read-only mode
+ * Displays both the entry content and an AI-generated reflection on the content
+ * Also provides navigation to edit the entry
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewEntryScreen(
     navController: NavHostController,
-    encodedEntryFilePath: String?,
-    geminiViewModel: GeminiViewModel = viewModel() // Inject GeminiViewModel
+    encodedEntryFilePath: String?, // URL-encoded path to the journal entry file
+    geminiViewModel: GeminiViewModel = viewModel() // For AI-powered reflection generation
 ) {
     val context = LocalContext.current
-    var entryData by remember { mutableStateOf<JournalEntryData?>(null) } // Data reloaded via LaunchedEffect
-    var isLoading by rememberSaveable { mutableStateOf(true) }
-    var errorLoading by rememberSaveable { mutableStateOf<String?>(null) }
-    var decodedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
+    var entryData by remember { mutableStateOf<JournalEntryData?>(null) } // Holds the loaded entry data
+    var isLoading by rememberSaveable { mutableStateOf(true) } // Loading state preserved across configuration changes
+    var errorLoading by rememberSaveable { mutableStateOf<String?>(null) } // Error message if loading fails
+    var decodedFilePath by rememberSaveable { mutableStateOf<String?>(null) } // Stores the decoded file path
 
-    // Observe reflection state from GeminiViewModel
+    // Observe AI reflection states from GeminiViewModel
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
 
+    // Load entry data when screen is first composed or when the path changes
     LaunchedEffect(encodedEntryFilePath) {
-        geminiViewModel.clearReflectionState()
+        geminiViewModel.clearReflectionState() // Reset any previous reflection
 
         if (encodedEntryFilePath == null) {
             errorLoading = "Entry path missing."
@@ -64,21 +70,21 @@ fun ViewEntryScreen(
             return@LaunchedEffect
         }
 
-        // If there's a new encodedEntryFilePath, reset loading states
-        // If it's the same path (e.g. rotation), rememberSaveable handles retaining state for isLoading/errorLoading
-        // However, we always want to try loading if the path is new or state was not saved.
-        val previousDecodedPath = decodedFilePath // Get current value before trying to decode new one
+        // Track path changes to avoid unnecessary reloading
+        // This is important for orientation changes where the path stays the same
+        val previousDecodedPath = decodedFilePath
         var newDecodedPath: String? = null
 
         try {
             newDecodedPath = Uri.decode(encodedEntryFilePath)
-            // Only reset loading flags if the path actually changed or if it's the initial load
+            // Only reload if path changed or initial load
             if (newDecodedPath != previousDecodedPath || entryData == null) {
                 isLoading = true
                 errorLoading = null
-                decodedFilePath = newDecodedPath // Store the successfully decoded path
+                decodedFilePath = newDecodedPath
                 Log.d("ViewEntryScreen", "Decoded file path: $newDecodedPath")
 
+                // Load entry data from file system
                 entryData = try {
                     loadJournalEntryData(context, newDecodedPath)
                 } catch (e: IOException) {
@@ -93,24 +99,26 @@ fun ViewEntryScreen(
                     isLoading = false
                 }
             } else {
-                // Path is the same, and data was likely already loaded and screen state (isLoading/errorLoading) restored by rememberSaveable
+                // Path is the same, rely on saved state
                 Log.d("ViewEntryScreen", "Path $newDecodedPath is same as previous $previousDecodedPath, or data already present. Relying on saved state for isLoading/errorLoading.")
             }
         } catch (e: Exception) {
             Log.e("ViewEntryScreen", "Error decoding file path '$encodedEntryFilePath': ${e.message}", e)
             errorLoading = "Invalid entry identifier."
             isLoading = false
-            decodedFilePath = null // Ensure decodedFilePath is reset on error
+            decodedFilePath = null // Reset path on error
             entryData = null // Clear any stale data
         }
     }
 
+    // Clean up reflection state when leaving the screen
     DisposableEffect(Unit) {
         onDispose {
             geminiViewModel.clearReflectionState()
         }
     }
 
+    // Main screen layout with top app bar
     Scaffold(
         topBar = {
             TopAppBar(
@@ -121,10 +129,11 @@ fun ViewEntryScreen(
                     }
                 },
                 actions = {
+                    // Edit button only appears if entry is successfully loaded
                     if (entryData != null && decodedFilePath != null) {
                         IconButton(onClick = {
                             try {
-                                // Re-encode the successfully decoded and stored file path
+                                // Re-encode the path for navigation parameter
                                 val reEncodedPath = Uri.encode(decodedFilePath)
                                 navController.navigate("$ROUTE_JOURNAL?$ARG_ENTRY_FILE_PATH=$reEncodedPath")
                             } catch (e: Exception) {
@@ -139,6 +148,7 @@ fun ViewEntryScreen(
             )
         }
     ) { paddingValues ->
+        // Content area with scrolling
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -146,6 +156,7 @@ fun ViewEntryScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // Show different views based on loading state
             when {
                 isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -158,6 +169,7 @@ fun ViewEntryScreen(
                     }
                 }
                 entryData != null -> {
+                    // Entry content followed by AI reflection section
                     EntryContentView(context, entryData!!)
                     Spacer(Modifier.height(24.dp))
                     Text(
@@ -183,6 +195,7 @@ fun ViewEntryScreen(
                     }
                 }
                 else -> {
+                    // Fallback for unexpected state (no error but no data)
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Entry not found or could not be loaded.")
                     }
@@ -192,15 +205,21 @@ fun ViewEntryScreen(
     }
 }
 
+/**
+ * Displays the journal entry content (image and text)
+ * Shows appropriate placeholders for missing content
+ */
 @Composable
 private fun EntryContentView(context: Context, entryData: JournalEntryData) {
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Resolve image file path if present in entry data
         val imageFile: File? = remember(entryData.imageRelativePath) {
             entryData.imageRelativePath?.let { File(context.filesDir, it) }
         }
 
+        // Image display with error handling
         if (imageFile?.exists() == true) {
             Image(
                 painter = rememberAsyncImagePainter(model = imageFile),
@@ -210,6 +229,7 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
                     .aspectRatio(4f / 3f)
             )
         } else if (entryData.imageRelativePath != null) {
+            // Show error if image path exists but file is missing
             Text(
                 "Image file missing (${entryData.imageRelativePath})",
                 style = MaterialTheme.typography.bodySmall,
@@ -218,12 +238,14 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
             )
         }
 
+        // Text content display with placeholder for empty entries
         if (entryData.textContent.isNotBlank()) {
             Text(
                 text = entryData.textContent,
                 style = MaterialTheme.typography.bodyLarge
             )
         } else if (imageFile?.exists() != true) {
+            // Only show "empty" message if there's no image or text
             Text(
                 "This entry is empty.",
                 style = MaterialTheme.typography.bodyLarge,
@@ -233,6 +255,10 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
     }
 }
 
+/**
+ * Card displaying AI-generated reflection on the journal entry
+ * Shows loading indicator, placeholder, or actual reflection
+ */
 @Composable
 fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -244,6 +270,7 @@ fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Choose appropriate text based on state
             val textToShow = when {
                 isLoadingReflection -> "Generating reflection..."
                 reflectionResult.isBlank() -> "Click 'Reflect' for AI insights on this entry."
@@ -256,6 +283,7 @@ fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
                     .weight(1f, fill = false)
                     .padding(end = 8.dp)
             )
+            // Show loading indicator while generating reflection
             if (isLoadingReflection) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
             }
@@ -263,7 +291,11 @@ fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
     }
 }
 
-
+/**
+ * Loads a journal entry file from the file system and parses its contents
+ * Extracts image path, text content, and timestamp information
+ * Returns structured JournalEntryData or throws exceptions for IO errors
+ */
 private suspend fun loadJournalEntryData(context: Context, filePath: String): JournalEntryData = withContext(Dispatchers.IO) {
     val entryFile = File(filePath)
     if (!entryFile.exists() || !entryFile.isFile) {
@@ -275,6 +307,7 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
     var fileTimestamp: LocalDateTime? = null
 
     try {
+        // Extract timestamp from filename using the defined formatter
         try {
             val timestampStr = entryFile.name.substringAfter("journal_").substringBefore(".txt")
             fileTimestamp = LocalDateTime.parse(timestampStr, filenameDateTimeFormatter)
@@ -282,9 +315,12 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
             Log.w("LoadEntryData", "Could not parse timestamp from filename: ${entryFile.name}", e)
         }
 
+        // Read file contents line by line
         val lines = entryFile.readLines()
+        // Check for image marker in first line
         val imageLine = lines.firstOrNull { it.startsWith(IMAGE_URI_MARKER) }
 
+        // Extract image path if present
         if (imageLine != null) {
             val path = imageLine.substringAfter(IMAGE_URI_MARKER).trim()
             if (path.startsWith(JOURNAL_IMAGE_DIR)) {
@@ -294,6 +330,7 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
             }
         }
 
+        // Text content is everything after the image marker line (if present)
         textContent = lines.drop(if (imageLine != null) 1 else 0).joinToString("\n")
 
         Log.d("LoadEntryData", "Loaded entry $filePath. Image: $imageRelativePath, Text length: ${textContent.length}")
