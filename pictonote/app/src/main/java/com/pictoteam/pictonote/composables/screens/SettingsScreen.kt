@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable // Added import
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,16 +46,17 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     val activity = remember(context) { context.findActivity() }
 
     val scope = rememberCoroutineScope()
-    var isSyncing by remember { mutableStateOf(false) }
-    var syncStatusMessage by remember { mutableStateOf<String?>(null) }
-    var currentSyncPhase by remember { mutableStateOf("") } // To show "Uploading..." or "Downloading..."
-    var showDbSetupDialog by remember { mutableStateOf(false) }
+    var isSyncing by rememberSaveable { mutableStateOf(false) }
+    var syncStatusMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var currentSyncPhase by rememberSaveable { mutableStateOf("") }
+    var showDbSetupDialog by rememberSaveable { mutableStateOf(false) }
 
-    val scrollState = rememberScrollState() // For the main Column
+    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
         if (!checkFirestoreDatabaseConfigured(context)) {
-            showDbSetupDialog = true
+            // Only show dialog if not already shown due to saved state
+            if (!showDbSetupDialog) showDbSetupDialog = true
         }
     }
 
@@ -70,7 +72,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState) // Standard vertical scroll for the entire screen
+            .verticalScroll(scrollState)
             .padding(16.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -130,13 +132,12 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         syncStatusMessage?.let { message ->
             val hasFailedText = message.contains("failed", ignoreCase = true) || message.contains("issues", ignoreCase = true)
             val isErrorText = message.contains("Error", ignoreCase = true)
-            // A sync is successful if it contains "handled" and no failure/error keywords.
             val isCompleteSuccess = message.contains("handled.", ignoreCase = true) && !hasFailedText && !isErrorText
 
             val textColor = when {
                 isErrorText || (message.startsWith("Manual Sync") && hasFailedText) -> MaterialTheme.colorScheme.error
-                isCompleteSuccess -> MaterialTheme.colorScheme.primary // Success color
-                else -> MaterialTheme.colorScheme.onSurfaceVariant // Neutral for in-progress
+                isCompleteSuccess -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
             Text(
                 text = message,
@@ -160,7 +161,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 onClick = {
                     if (!isSyncing) {
                         isSyncing = true
-                        currentSyncPhase = "" // Reset phase display
+                        currentSyncPhase = ""
                         syncStatusMessage = "Preparing manual sync..."
                         scope.launch {
                             if (!checkFirestoreDatabaseConfigured(context)) {
@@ -172,17 +173,16 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                             synchronizeAllJournalEntries(
                                 context = context,
                                 onPhaseChange = { phase ->
-                                    currentSyncPhase = phase // Store the current phase
+                                    currentSyncPhase = phase
                                     syncStatusMessage = "$phase..."
                                 },
-                                onProgress = { phaseArgument, current, total -> // Use phase from progress
-                                    // Ensure currentSyncPhase is updated if it changed
+                                onProgress = { phaseArgument, current, total ->
                                     if(currentSyncPhase.isEmpty() || currentSyncPhase != phaseArgument) currentSyncPhase = phaseArgument
                                     syncStatusMessage = "$currentSyncPhase ($current/$total)"
                                 },
                                 onComplete = { totalUniqueEntries, totalSuccessfullySynced ->
                                     isSyncing = false
-                                    currentSyncPhase = "" // Clear phase on completion
+                                    currentSyncPhase = ""
                                     val failures = totalUniqueEntries - totalSuccessfullySynced
                                     syncStatusMessage = if (totalUniqueEntries > 0) {
                                         "Manual Sync: $totalSuccessfullySynced/$totalUniqueEntries handled."
@@ -200,7 +200,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 enabled = !isSyncing,
                 modifier = Modifier.weight(1f)
             ) {
-                if (isSyncing && currentSyncPhase.isNotEmpty()) { // Show indicator only when actively syncing
+                if (isSyncing && currentSyncPhase.isNotEmpty()) {
                     CircularProgressIndicator(
                         Modifier.size(20.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -236,11 +236,10 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 Text("Log Out")
             }
         }
-        Spacer(Modifier.height(16.dp)) // Ensure some space at the very bottom
+        Spacer(Modifier.height(16.dp))
     }
 }
 
-// SettingItem, FontSizeSetting, NotificationFrequencySetting composables
 @Composable
 fun SettingItem(
     title: String,

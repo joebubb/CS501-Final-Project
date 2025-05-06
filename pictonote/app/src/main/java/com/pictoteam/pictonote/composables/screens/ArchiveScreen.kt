@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward // For d
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver // Added import
+import androidx.compose.runtime.saveable.rememberSaveable // Added import
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -47,6 +49,18 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.*
 
+// Saver for YearMonth
+val YearMonthSaver = Saver<YearMonth, List<Int>>(
+    save = { listOf(it.year, it.monthValue) },
+    restore = { YearMonth.of(it[0], it[1]) }
+)
+
+// Saver for Month
+val MonthSaver = Saver<Month, Int>(
+    save = { it.value }, // Store month number (1-12)
+    restore = { Month.of(it) }
+)
+
 @Composable
 fun ArchiveScreen(navController: NavHostController) {
     val context = LocalContext.current
@@ -55,9 +69,9 @@ fun ArchiveScreen(navController: NavHostController) {
     val orientation = configuration.orientation
 
     // State for the currently selected YearMonth to display on the archive screen
-    var selectedYearMonth by remember { mutableStateOf(YearMonth.now()) }
-    var selectedDay by remember { mutableStateOf<Int?>(null) }
-    var showMonthYearPickerDialog by remember { mutableStateOf(false) }
+    var selectedYearMonth by rememberSaveable(stateSaver = YearMonthSaver) { mutableStateOf(YearMonth.now()) }
+    var selectedDay by rememberSaveable { mutableStateOf<Int?>(null) }
+    var showMonthYearPickerDialog by rememberSaveable { mutableStateOf(false) }
 
     val screenContentPadding = if (screenWidthDp >= 600) 24.dp else 16.dp
     val contentAreaModifier = Modifier
@@ -169,9 +183,8 @@ fun MonthYearPickerDialog(
     onDismissRequest: () -> Unit,
     onYearMonthSelected: (YearMonth) -> Unit
 ) {
-    var currentDialogYear by remember { mutableStateOf(initialYearMonth.year) }
-    // Store the initially selected month to pre-select in the dialog's month grid
-    var selectedMonthInDialog by remember { mutableStateOf(initialYearMonth.month) }
+    var currentDialogYear by rememberSaveable(initialYearMonth.year) { mutableStateOf(initialYearMonth.year) }
+    var selectedMonthInDialog by rememberSaveable(initialYearMonth.month, stateSaver = MonthSaver) { mutableStateOf(initialYearMonth.month) }
 
     val allMonths = Month.values() // Array of all Month enums
 
@@ -297,9 +310,6 @@ fun CalendarGrid(
     }
 }
 
-// MemoriesCard, getDaysWithEntriesForMonth, readJournalEntriesForDate, readJournalEntryFromFileInternal
-// remain UNCHANGED from your last provided version. Make sure they use selectedYear and selectedMonth.
-// ... (Paste the existing MemoriesCard, getDaysWithEntriesForMonth, readJournalEntriesForDate, readJournalEntryFromFileInternal here)
 @Composable
 fun MemoriesCard(
     modifier: Modifier = Modifier,
@@ -310,7 +320,8 @@ fun MemoriesCard(
     navController: NavHostController
 ) {
     var journalEntries by remember(context, selectedYear, selectedMonth, selectedDay) { mutableStateOf<List<JournalEntryData>>(emptyList()) }
-    var currentEntryIndex by remember(selectedYear, selectedMonth, selectedDay) { mutableIntStateOf(0) }
+    // currentEntryIndex needs to be rememberSaveable to persist across configuration changes
+    var currentEntryIndex by rememberSaveable(selectedYear, selectedMonth, selectedDay) { mutableIntStateOf(0) }
 
     LaunchedEffect(selectedYear, selectedMonth, selectedDay) {
         journalEntries = selectedDay?.let { day ->
@@ -318,8 +329,13 @@ fun MemoriesCard(
                 readJournalEntriesForDate(context, selectedYear, selectedMonth, day)
             }
         } ?: emptyList()
-        currentEntryIndex = 0
-        Log.d("MemoriesCard", "Loaded ${journalEntries.size} entries for $selectedYear-$selectedMonth-$selectedDay")
+        // Reset index only if the list is empty or day changed to null, otherwise keep saved index
+        if (journalEntries.isEmpty() || selectedDay == null) {
+            currentEntryIndex = 0
+        } else if (currentEntryIndex >= journalEntries.size) { // Ensure index is valid
+            currentEntryIndex = 0
+        }
+        Log.d("MemoriesCard", "Loaded ${journalEntries.size} entries for $selectedYear-$selectedMonth-$selectedDay. Current index: $currentEntryIndex")
     }
 
     val currentEntry = journalEntries.getOrNull(currentEntryIndex)
@@ -417,7 +433,7 @@ fun MemoriesCard(
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Box(Modifier.weight(1f))
+                    Box(Modifier.weight(1f)) // Pushes button to bottom
 
                     Button(
                         onClick = {
@@ -438,7 +454,7 @@ fun MemoriesCard(
                         Text("Open Entry")
                     }
                 }
-                else -> {
+                else -> { // Should not happen if logic is correct
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Error displaying entry.", color = MaterialTheme.colorScheme.error)
                     }

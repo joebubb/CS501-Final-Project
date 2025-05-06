@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable // Added import
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -69,7 +70,7 @@ private fun ApplyEdgeToEdge() {
 @Composable
 fun PictoNoteApp() {
     val navController = rememberNavController()
-    var isCameraPreviewActive by remember { mutableStateOf(false) }
+    var isCameraPreviewActive by rememberSaveable { mutableStateOf(false) } // Changed to rememberSaveable
     val context = LocalContext.current
 
     val configuration = LocalConfiguration.current
@@ -92,7 +93,7 @@ fun PictoNoteApp() {
 
 
     val firebaseAuth = FirebaseAuth.getInstance()
-    var initialSyncTriggered by remember { mutableStateOf(false) }
+    var initialSyncTriggered by rememberSaveable { mutableStateOf(false) } // Changed to rememberSaveable
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(firebaseAuth.currentUser, initialSyncTriggered) {
@@ -114,7 +115,7 @@ fun PictoNoteApp() {
                 }
             }
         } else if (user == null) {
-            initialSyncTriggered = false
+            initialSyncTriggered = false // Reset if user logs out
         }
     }
 
@@ -219,7 +220,7 @@ fun NavigationGraph(
             route = ROUTE_VIEW_ENTRY_WITH_ARG,
             arguments = listOf(navArgument(ARG_ENTRY_FILE_PATH) {
                 type = NavType.StringType
-                nullable = false
+                nullable = false // It's not nullable for ViewEntry
             })
         ) { backStackEntry ->
             val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
@@ -229,8 +230,10 @@ fun NavigationGraph(
                     encodedEntryFilePath = encodedEntryFilePath
                 )
             } else {
+                // This case should ideally not happen if argument is non-nullable and provided.
+                // Handling for safety.
                 Log.e("NavigationGraph", "Error: entryFilePath was null for $ROUTE_VIEW_ENTRY_WITH_ARG.")
-                LaunchedEffect(Unit) {
+                LaunchedEffect(Unit) { // Use LaunchedEffect for side effects like navigation
                     navController.popBackStack()
                 }
             }

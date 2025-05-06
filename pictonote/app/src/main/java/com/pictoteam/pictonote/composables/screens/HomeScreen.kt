@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver // Added import
+import androidx.compose.runtime.saveable.rememberSaveable // Added import
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +38,25 @@ import java.time.LocalDate
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
+
+// Saver for LocalDate
+val LocalDateSaver = Saver<LocalDate, List<Int>>(
+    save = { listOf(it.year, it.monthValue, it.dayOfMonth) },
+    restore = { LocalDate.of(it[0], it[1], it[2]) }
+)
+
+// Helper to convert LocalDate to a saveable string or list for SetLocalDateSaver
+private fun localDateToStringRepresentation(date: LocalDate): String = "${date.year}:${date.monthValue}:${date.dayOfMonth}"
+private fun stringRepresentationToLocalDate(str: String): LocalDate {
+    val parts = str.split(':').map { it.toInt() }
+    return LocalDate.of(parts[0], parts[1], parts[2])
+}
+
+// Saver for Set<LocalDate>
+val SetLocalDateSaver = Saver<Set<LocalDate>, List<String>>(
+    save = { set -> set.map { localDateToStringRepresentation(it) } },
+    restore = { list -> list.map { stringRepresentationToLocalDate(it) }.toSet() }
+)
 
 
 private fun readJournalEntryTextFromFileInternal(entryFile: File): String? {
@@ -157,10 +178,20 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) {
         .fillMaxSize()
         .padding(horizontal = screenContentPadding)
 
-    var refreshTrigger by remember { mutableIntStateOf(0) }
+    var refreshTrigger by rememberSaveable { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(key1 = refreshTrigger) {
+    // State for datesWithEntries, managed by rememberSaveable and updated by LaunchedEffect
+    var datesWithEntries by rememberSaveable(stateSaver = SetLocalDateSaver) {
+        mutableStateOf(emptySet<LocalDate>())
+    }
+
+    LaunchedEffect(key1 = context, key2 = refreshTrigger) {
+        Log.d("HomeScreen", "LaunchedEffect fetching datesWithEntries (Context: $context, Trigger: $refreshTrigger)")
+        datesWithEntries = getDatesWithEntriesForPastWeek(context)
+    }
+
+    LaunchedEffect(key1 = refreshTrigger) { // For weekly summary, context is implicitly available
         Log.d("HomeScreen", "LaunchedEffect running for weekly summary (Trigger: $refreshTrigger)")
         val endDate = LocalDate.now()
         val startDate = endDate.minusDays(6)
@@ -168,9 +199,6 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) {
         geminiViewModel.generateWeeklySummary(fetchedText)
     }
 
-    val datesWithEntries by produceState<Set<LocalDate>>(initialValue = emptySet(), context, refreshTrigger) {
-        value = getDatesWithEntriesForPastWeek(context)
-    }
     val currentStreak by remember(datesWithEntries) {
         derivedStateOf { calculateCurrentStreak(datesWithEntries) }
     }
@@ -185,7 +213,7 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) {
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         StreakCard(
                             modifier = commonCardModifier.fillMaxWidth(),
-                            datesWithEntries = datesWithEntries,
+                            datesWithEntries = datesWithEntries, // Use the saved state
                             currentStreak = currentStreak
                         )
                         WeeklySummaryCard(
@@ -220,7 +248,7 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) {
 
                 StreakCard(
                     modifier = commonCardModifier.then(cardWidthModifier),
-                    datesWithEntries = datesWithEntries,
+                    datesWithEntries = datesWithEntries, // Use the saved state
                     currentStreak = currentStreak
                 )
                 RemindersCard(commonCardModifier.then(cardWidthModifier))

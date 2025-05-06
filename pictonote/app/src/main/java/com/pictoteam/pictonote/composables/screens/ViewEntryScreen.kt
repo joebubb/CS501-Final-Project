@@ -1,4 +1,3 @@
-// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/composables/screens/ViewEntryScreen.kt
 package com.pictoteam.pictonote.composables.screens
 
 import android.content.Context
@@ -16,6 +15,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState // Import observeAsState
+import androidx.compose.runtime.saveable.rememberSaveable // Added import
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,17 +45,16 @@ fun ViewEntryScreen(
     geminiViewModel: GeminiViewModel = viewModel() // Inject GeminiViewModel
 ) {
     val context = LocalContext.current
-    var entryData by remember { mutableStateOf<JournalEntryData?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorLoading by remember { mutableStateOf<String?>(null) }
-    var decodedFilePath by remember { mutableStateOf<String?>(null) }
+    var entryData by remember { mutableStateOf<JournalEntryData?>(null) } // Data reloaded via LaunchedEffect
+    var isLoading by rememberSaveable { mutableStateOf(true) }
+    var errorLoading by rememberSaveable { mutableStateOf<String?>(null) }
+    var decodedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Observe reflection state from GeminiViewModel
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
 
     LaunchedEffect(encodedEntryFilePath) {
-        // Clear previous reflection when loading a new entry path
         geminiViewModel.clearReflectionState()
 
         if (encodedEntryFilePath == null) {
@@ -65,35 +64,47 @@ fun ViewEntryScreen(
             return@LaunchedEffect
         }
 
-        try {
-            val decodedPath = Uri.decode(encodedEntryFilePath)
-            decodedFilePath = decodedPath
-            Log.d("ViewEntryScreen", "Decoded file path: $decodedPath")
+        // If there's a new encodedEntryFilePath, reset loading states
+        // If it's the same path (e.g. rotation), rememberSaveable handles retaining state for isLoading/errorLoading
+        // However, we always want to try loading if the path is new or state was not saved.
+        val previousDecodedPath = decodedFilePath // Get current value before trying to decode new one
+        var newDecodedPath: String? = null
 
-            isLoading = true
-            errorLoading = null
-            entryData = try {
-                loadJournalEntryData(context, decodedPath)
-            } catch (e: IOException) {
-                Log.e("ViewEntryScreen", "IOException loading entry: ${e.message}", e)
-                errorLoading = "Could not load entry details."
-                null
-            } catch (e: Exception) {
-                Log.e("ViewEntryScreen", "Error loading entry: ${e.message}", e)
-                errorLoading = "An unexpected error occurred."
-                null
-            } finally {
-                isLoading = false
+        try {
+            newDecodedPath = Uri.decode(encodedEntryFilePath)
+            // Only reset loading flags if the path actually changed or if it's the initial load
+            if (newDecodedPath != previousDecodedPath || entryData == null) {
+                isLoading = true
+                errorLoading = null
+                decodedFilePath = newDecodedPath // Store the successfully decoded path
+                Log.d("ViewEntryScreen", "Decoded file path: $newDecodedPath")
+
+                entryData = try {
+                    loadJournalEntryData(context, newDecodedPath)
+                } catch (e: IOException) {
+                    Log.e("ViewEntryScreen", "IOException loading entry: ${e.message}", e)
+                    errorLoading = "Could not load entry details."
+                    null
+                } catch (e: Exception) {
+                    Log.e("ViewEntryScreen", "Error loading entry: ${e.message}", e)
+                    errorLoading = "An unexpected error occurred."
+                    null
+                } finally {
+                    isLoading = false
+                }
+            } else {
+                // Path is the same, and data was likely already loaded and screen state (isLoading/errorLoading) restored by rememberSaveable
+                Log.d("ViewEntryScreen", "Path $newDecodedPath is same as previous $previousDecodedPath, or data already present. Relying on saved state for isLoading/errorLoading.")
             }
         } catch (e: Exception) {
             Log.e("ViewEntryScreen", "Error decoding file path '$encodedEntryFilePath': ${e.message}", e)
             errorLoading = "Invalid entry identifier."
             isLoading = false
-            decodedFilePath = null
+            decodedFilePath = null // Ensure decodedFilePath is reset on error
+            entryData = null // Clear any stale data
         }
     }
 
-    // Clear reflection state when the composable leaves the composition
     DisposableEffect(Unit) {
         onDispose {
             geminiViewModel.clearReflectionState()
@@ -113,6 +124,7 @@ fun ViewEntryScreen(
                     if (entryData != null && decodedFilePath != null) {
                         IconButton(onClick = {
                             try {
+                                // Re-encode the successfully decoded and stored file path
                                 val reEncodedPath = Uri.encode(decodedFilePath)
                                 navController.navigate("$ROUTE_JOURNAL?$ARG_ENTRY_FILE_PATH=$reEncodedPath")
                             } catch (e: Exception) {
@@ -127,59 +139,51 @@ fun ViewEntryScreen(
             )
         }
     ) { paddingValues ->
-        Column( // Changed Box to Column to allow scrolling for reflection
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState()) // Make content scrollable
-                .padding(16.dp) // Add specific screen padding
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
         ) {
             when {
                 isLoading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center loading indicator
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
                 errorLoading != null -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center error message
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(errorLoading!!, color = MaterialTheme.colorScheme.error)
                     }
                 }
                 entryData != null -> {
-                    // Display entry content (Image and Text)
                     EntryContentView(context, entryData!!)
-
-                    Spacer(Modifier.height(24.dp)) // Space before AI section
-
-                    // --- AI Reflection Section ---
+                    Spacer(Modifier.height(24.dp))
                     Text(
                         "AI Reflection",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    ReflectionViewCard( // Use the new composable
+                    ReflectionViewCard(
                         reflectionResult = reflectionResult,
                         isLoadingReflection = isLoadingReflection
                     )
                     Spacer(Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            // Trigger reflection using the loaded entry's text
                             geminiViewModel.reflectOnJournalEntry(entryData!!.textContent)
                         },
-                        // Disable if loading or if the entry has no text content
                         enabled = !isLoadingReflection && entryData!!.textContent.isNotBlank(),
-                        modifier = Modifier.align(Alignment.End) // Align button to the end
+                        modifier = Modifier.align(Alignment.End)
                     ) {
                         Icon(Icons.Default.Psychology, contentDescription = null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Reflect")
                     }
-                    // --- End AI Reflection Section ---
-
                 }
                 else -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { // Center fallback message
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Entry not found or could not be loaded.")
                     }
                 }
@@ -190,11 +194,9 @@ fun ViewEntryScreen(
 
 @Composable
 private fun EntryContentView(context: Context, entryData: JournalEntryData) {
-    // This Column is now directly inside the scrollable Column of the Scaffold content
     Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp) // Keep spacing between image/text
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Image Display (if available)
         val imageFile: File? = remember(entryData.imageRelativePath) {
             entryData.imageRelativePath?.let { File(context.filesDir, it) }
         }
@@ -206,7 +208,6 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(4f / 3f)
-                // Removed bottom padding here, handled by Column's arrangement
             )
         } else if (entryData.imageRelativePath != null) {
             Text(
@@ -217,7 +218,6 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
             )
         }
 
-        // Text Content Display
         if (entryData.textContent.isNotBlank()) {
             Text(
                 text = entryData.textContent,
@@ -233,7 +233,6 @@ private fun EntryContentView(context: Context, entryData: JournalEntryData) {
     }
 }
 
-// --- NEW Composable for Reflection Display ---
 @Composable
 fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -241,22 +240,21 @@ fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 12.dp)
                 .fillMaxWidth()
-                .defaultMinSize(minHeight = 60.dp), // Slightly taller min height
+                .defaultMinSize(minHeight = 60.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Determine the text to display based on loading state and content
             val textToShow = when {
                 isLoadingReflection -> "Generating reflection..."
-                reflectionResult.isBlank() -> "Click 'Reflect' for AI insights on this entry." // Initial prompt
-                else -> reflectionResult // Show the actual reflection if available
+                reflectionResult.isBlank() -> "Click 'Reflect' for AI insights on this entry."
+                else -> reflectionResult
             }
             Text(
                 text = textToShow,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier
-                    .weight(1f, fill = false) // Take available space
-                    .padding(end = 8.dp) // Space before indicator
+                    .weight(1f, fill = false)
+                    .padding(end = 8.dp)
             )
             if (isLoadingReflection) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -266,9 +264,7 @@ fun ReflectionViewCard(reflectionResult: String, isLoadingReflection: Boolean) {
 }
 
 
-// Helper function loadJournalEntryData (no changes needed)
 private suspend fun loadJournalEntryData(context: Context, filePath: String): JournalEntryData = withContext(Dispatchers.IO) {
-    // ... (implementation as before) ...
     val entryFile = File(filePath)
     if (!entryFile.exists() || !entryFile.isFile) {
         throw IOException("Entry file not found or is not a file: $filePath")
@@ -279,7 +275,6 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
     var fileTimestamp: LocalDateTime? = null
 
     try {
-        // Attempt to parse timestamp from filename
         try {
             val timestampStr = entryFile.name.substringAfter("journal_").substringBefore(".txt")
             fileTimestamp = LocalDateTime.parse(timestampStr, filenameDateTimeFormatter)
@@ -287,7 +282,6 @@ private suspend fun loadJournalEntryData(context: Context, filePath: String): Jo
             Log.w("LoadEntryData", "Could not parse timestamp from filename: ${entryFile.name}", e)
         }
 
-        // Read file content
         val lines = entryFile.readLines()
         val imageLine = lines.firstOrNull { it.startsWith(IMAGE_URI_MARKER) }
 
