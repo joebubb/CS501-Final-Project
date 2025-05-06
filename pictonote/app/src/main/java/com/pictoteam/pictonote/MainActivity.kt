@@ -1,6 +1,7 @@
 // /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/MainActivity.kt
 package com.pictoteam.pictonote
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -13,6 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection // Added for padding calculation
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,13 +25,12 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import com.google.firebase.auth.FirebaseAuth
 import com.pictoteam.pictonote.composables.screens.ArchiveScreen
 import com.pictoteam.pictonote.composables.screens.HomeScreen
 import com.pictoteam.pictonote.composables.screens.JournalScreen
 import com.pictoteam.pictonote.composables.screens.SettingsScreen
-import com.pictoteam.pictonote.composables.screens.ViewEntryScreen // Import the new screen
-import com.pictoteam.pictonote.constants.* // Import all constants
+import com.pictoteam.pictonote.composables.screens.ViewEntryScreen
+import com.pictoteam.pictonote.constants.*
 import com.pictoteam.pictonote.model.SettingsViewModel
 import com.pictoteam.pictonote.ui.theme.PictoNoteTheme
 
@@ -64,16 +67,69 @@ private fun ApplyEdgeToEdge() {
 @Composable
 fun PictoNoteApp() {
     val navController = rememberNavController()
+    var isCameraPreviewActive by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val smallestScreenWidthDp = configuration.smallestScreenWidthDp
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isPhone = smallestScreenWidthDp < 600
+
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+
+    LaunchedEffect(currentRoute, isCameraPreviewActive) {
+        if (currentRoute?.startsWith(ROUTE_JOURNAL) == false && isCameraPreviewActive) {
+            Log.d("PictoNoteApp", "Route changed from Journal or camera no longer active, resetting isCameraPreviewActive")
+            isCameraPreviewActive = false
+        }
+    }
+
+    val onJournalScreenAndCameraActive = currentRoute?.startsWith(ROUTE_JOURNAL) == true && isCameraPreviewActive
+
+    val showBottomBar = when {
+        isPhone && isLandscape -> false
+        !isPhone && isLandscape && onJournalScreenAndCameraActive -> false
+        else -> true
+    }
+
     Scaffold(
-        bottomBar = { BottomNavigationBar(navController) }
+        bottomBar = {
+            if (showBottomBar) {
+                BottomNavigationBar(navController)
+            }
+        }
     ) { innerPadding ->
-        val bottomPadding = innerPadding.calculateBottomPadding()
-        Box(modifier = Modifier.padding(bottom = bottomPadding)) {
-            NavigationGraph(navController = navController)
+        // Conditionally adjust top padding for the main content area
+        val actualTopPadding = if (isCameraPreviewActive) 0.dp else innerPadding.calculateTopPadding()
+        val layoutDirection = LocalLayoutDirection.current
+
+        val contentAreaPadding = PaddingValues(
+            start = innerPadding.calculateStartPadding(layoutDirection),
+            top = actualTopPadding, // Use the conditional top padding
+            end = innerPadding.calculateEndPadding(layoutDirection),
+            bottom = innerPadding.calculateBottomPadding()
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentAreaPadding) // Apply the carefully constructed padding
+        ) {
+            NavigationGraph(
+                navController = navController,
+                setCameraPreviewActive = { isActive ->
+                    if (isCameraPreviewActive != isActive) {
+                        isCameraPreviewActive = isActive
+                        Log.d("PictoNoteApp", "isCameraPreviewActive set to: $isActive")
+                    }
+                }
+            )
         }
     }
 }
 
+// BottomNavigationBar, navigateTo, and NavigationGraph functions remain UNCHANGED from your last provided version.
+// Just ensure NavigationGraph passes setCameraPreviewActive to JournalScreen.
 @Composable
 fun BottomNavigationBar(navController: NavHostController) {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -83,7 +139,6 @@ fun BottomNavigationBar(navController: NavHostController) {
         NavigationBarItem(
             icon = { Icon(Icons.Default.AccountBox, contentDescription = "Archive") },
             label = { Text("Archive") },
-            // Selected if the route is archive OR if viewing an entry (which originates from archive)
             selected = currentRoute == ROUTE_ARCHIVE || currentRoute?.startsWith(ROUTE_VIEW_ENTRY) == true,
             onClick = { navigateTo(navController, ROUTE_ARCHIVE) }
         )
@@ -98,17 +153,13 @@ fun BottomNavigationBar(navController: NavHostController) {
             label = { Text("Journal") },
             selected = currentRoute?.startsWith(ROUTE_JOURNAL) ?: false,
             onClick = {
-                // Navigate to plain journal route only if not already on a journal route
                 if (currentRoute?.startsWith(ROUTE_JOURNAL) != true) {
-                    // Navigate to the base journal route for creating a new entry
                     navController.navigate(ROUTE_JOURNAL) {
                         popUpTo(navController.graph.startDestinationId) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
                 }
-                // If already on Journal screen (editing), clicking again does nothing specific here,
-                // but the button remains selected.
             }
         )
         NavigationBarItem(
@@ -120,63 +171,59 @@ fun BottomNavigationBar(navController: NavHostController) {
     }
 }
 
-// Navigation helper
 private fun navigateTo(navController: NavHostController, route: String) {
-    // Prevent navigating to the same route if already there
-    // Exception: Allow re-navigating to Archive from ViewEntry, etc. (handled by default nav logic)
     if (navController.currentDestination?.route != route) {
         navController.navigate(route) {
-            // Pop up to the start destination of the graph to avoid building up a large stack
             popUpTo(navController.graph.startDestinationId) {
-                saveState = true // Save state of screens popped off
+                saveState = true
             }
-            // Avoid multiple copies of the same destination when reselecting the same item
             launchSingleTop = true
-            // Restore state when navigating back to previously visited screens
             restoreState = true
         }
     }
 }
 
-// Navigation graph
 @Composable
-fun NavigationGraph(navController: NavHostController) {
+fun NavigationGraph(
+    navController: NavHostController,
+    setCameraPreviewActive: (Boolean) -> Unit
+) {
     NavHost(navController, startDestination = ROUTE_HOME) {
         composable(ROUTE_HOME) { HomeScreen() }
         composable(ROUTE_ARCHIVE) { ArchiveScreen(navController = navController) }
         composable(
-            route = ROUTE_JOURNAL_WITH_OPTIONAL_ARG, // For creating new or editing existing
+            route = ROUTE_JOURNAL_WITH_OPTIONAL_ARG,
             arguments = listOf(navArgument(ARG_ENTRY_FILE_PATH) {
                 type = NavType.StringType
-                nullable = true // Nullable for new entries
+                nullable = true
                 defaultValue = null
             })
         ) { backStackEntry ->
-            // Get potentially null, encoded path
             val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
-            JournalScreen(
+            JournalScreen( // Pass the callback here
                 navController = navController,
-                entryFilePathToEdit = encodedEntryFilePath // Pass encoded path (or null) to JournalScreen
+                entryFilePathToEdit = encodedEntryFilePath,
+                setCameraPreviewActive = setCameraPreviewActive,
+                journalViewModel = viewModel(), // Assuming you want default VM instances
+                geminiViewModel = viewModel()
             )
         }
         composable(
-            route = ROUTE_VIEW_ENTRY_WITH_ARG, // New route for viewing
+            route = ROUTE_VIEW_ENTRY_WITH_ARG,
             arguments = listOf(navArgument(ARG_ENTRY_FILE_PATH) {
                 type = NavType.StringType
-                nullable = false // Path is required for viewing
+                nullable = false
             })
         ) { backStackEntry ->
-            // Get the required, encoded path. Handle potential null for safety although NavType says non-nullable.
             val encodedEntryFilePath = backStackEntry.arguments?.getString(ARG_ENTRY_FILE_PATH)
             if (encodedEntryFilePath != null) {
                 ViewEntryScreen(
                     navController = navController,
-                    encodedEntryFilePath = encodedEntryFilePath // Pass encoded path
+                    encodedEntryFilePath = encodedEntryFilePath
                 )
             } else {
-                // Handle error: Log and navigate back
                 Log.e("NavigationGraph", "Error: entryFilePath was null for $ROUTE_VIEW_ENTRY_WITH_ARG.")
-                LaunchedEffect(Unit) { // Use LaunchedEffect to navigate safely from composable
+                LaunchedEffect(Unit) {
                     navController.popBackStack()
                 }
             }
