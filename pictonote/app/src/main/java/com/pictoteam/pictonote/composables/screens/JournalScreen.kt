@@ -15,7 +15,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibility // Re-added
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,12 +26,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.ExpandLess // Import icons for expand/collapse
-import androidx.compose.material.icons.outlined.ExpandMore // Import icons for expand/collapse
-import androidx.compose.material.icons.outlined.Image // Import image icon
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Image // Re-added
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.saveable.rememberSaveable // Re-added
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,8 +52,8 @@ import coil3.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
 import com.pictoteam.pictonote.model.GeminiViewModel
 import com.pictoteam.pictonote.model.JournalViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay // Re-added
+import kotlinx.coroutines.isActive // Re-added
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -63,14 +64,14 @@ val promptTypes = listOf("Default", "Reflective", "Creative", "Goal-Oriented", "
 
 // Define a maximum character limit for the journal entry
 private const val MAX_JOURNAL_LENGTH = 5000 // Adjust as needed
-private const val IMAGE_MINIMIZE_DELAY_MS = 5000L // 5 seconds
-private const val PROMPT_EXPAND_THRESHOLD = 500 // Expand prompt by default if under 80 chars
+// Define the auto-minimize delay with a variable
+const val IMAGE_AUTO_MINIMIZE_DELAY_MS = 5000L // 5 seconds (changeable)
 
-@OptIn(ExperimentalMaterial3Api::class) // Needed for ExposedDropdownMenuBox
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JournalScreen(
     navController: NavHostController,
-    entryFilePathToEdit: String?, // This comes from NavArguments, null for new entry
+    entryFilePathToEdit: String?,
     journalViewModel: JournalViewModel = viewModel(),
     geminiViewModel: GeminiViewModel = viewModel()
 ) {
@@ -81,15 +82,25 @@ fun JournalScreen(
     val capturedImageUri by journalViewModel.capturedImageUri.collectAsStateWithLifecycle()
     val journalText by journalViewModel.journalText.collectAsStateWithLifecycle()
     val isSaving by journalViewModel.isSaving.collectAsStateWithLifecycle()
-    val isEditing by journalViewModel.isEditing.collectAsStateWithLifecycle() // Tracks if editing specific entry
+    val isEditing by journalViewModel.isEditing.collectAsStateWithLifecycle()
 
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for suggestion")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
 
     // --- Local UI State ---
-    var isImageMinimized by remember { mutableStateOf(false) }
-    LaunchedEffect(capturedImageUri, isEditing) {
-        isImageMinimized = false
+    // ** Image Minimization State **
+    // Persists across recompositions/config changes. Keyed to isEditing to reset default.
+    var isImageMinimized by rememberSaveable(isEditing) { mutableStateOf(false) }
+    // Tracks if this is the first composition *after* this specific image URI was set.
+    // Used to ensure the image shows fully on first capture/load, but starts minimized on re-entry.
+    var isInitialImageDisplay by remember { mutableStateOf(true) }
+
+    // Reset isInitialImageDisplay when the URI becomes null (entry cleared/saved)
+    LaunchedEffect(capturedImageUri) {
+        if (capturedImageUri == null) {
+            isInitialImageDisplay = true
+            isImageMinimized = false // Reset minimization state when image is gone
+        }
     }
 
     // Camera related state
@@ -103,9 +114,7 @@ fun JournalScreen(
     var hasCamPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCamPermission = granted
-        if (!granted) {
-            Toast.makeText(context, "Camera permission is required.", Toast.LENGTH_LONG).show()
-        }
+        if (!granted) { Toast.makeText(context, "Camera permission is required.", Toast.LENGTH_LONG).show() }
     }
 
     // Dropdown Menu State
@@ -128,28 +137,59 @@ fun JournalScreen(
     // Load/Clear state based on navigation argument
     LaunchedEffect(entryFilePathToEdit, lifecycleOwner) {
         if (entryFilePathToEdit != null) {
-            Log.d("JournalScreen", "Effect: Edit mode. Received path (encoded): $entryFilePathToEdit")
+            // ** EDITING MODE **
+            Log.d("JournalScreen", "Effect: Edit mode start. Path: $entryFilePathToEdit")
+            isInitialImageDisplay = true // Treat load for edit as an initial display
+            isImageMinimized = false    // Start expanded when editing
             try {
                 val decodedPath = Uri.decode(entryFilePathToEdit)
                 journalViewModel.loadEntryForEditing(context, decodedPath)
-            } catch (e: IllegalArgumentException) {
+            } catch (e: IllegalArgumentException) { /* ... error handling ... */
                 Log.e("JournalScreen", "Error decoding file path for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error: Invalid entry identifier.", Toast.LENGTH_SHORT).show()
                 navController.popBackStack()
-            } catch (e: Exception) {
+            } catch (e: Exception) { /* ... error handling ... */
                 Log.e("JournalScreen", "Error loading entry for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error loading entry for editing.", Toast.LENGTH_SHORT).show()
                 navController.popBackStack()
             }
         } else {
+            // ** NEW ENTRY MODE **
             if (journalViewModel.isEditing.value) {
-                Log.w("JournalScreen", "Effect: New entry screen, but ViewModel was in edit mode. Clearing ViewModel.")
+                // Came from editing, now it's a new entry - clear everything
+                Log.w("JournalScreen", "Effect: New entry screen, but ViewModel was in edit mode. Clearing all state.")
                 journalViewModel.clearJournalState()
+                isImageMinimized = false
+                isInitialImageDisplay = true
             } else {
-                Log.d("JournalScreen", "Effect: New entry screen. Using existing ViewModel state (if any).")
+                // Standard new entry screen entry/re-entry
+                if (capturedImageUri != null && !isInitialImageDisplay) {
+                    // We have an image from the VM AND it's not the initial display = RE-ENTRY
+                    Log.d("JournalScreen", "Effect: Re-entering new entry with existing image. Setting to minimized.")
+                    isImageMinimized = true
+                } else if (capturedImageUri != null && isInitialImageDisplay){
+                    // We have an image from the VM AND it IS the initial display = JUST CAPTURED/NAVIGATED TO
+                    Log.d("JournalScreen", "Effect: First view of new entry image. Setting to expanded.")
+                    isImageMinimized = false
+                    // isInitialImageDisplay will be set to false by the other LaunchedEffect
+                } else {
+                    // No image in VM, or it's initial view of null image
+                    Log.d("JournalScreen", "Effect: New entry screen, no existing image or initial view. State defaults.")
+                    isImageMinimized = false // Ensure it's not minimized if no image
+                }
             }
         }
     }
+
+    // Effect to handle the first appearance of a newly captured image
+    LaunchedEffect(capturedImageUri) {
+        if (capturedImageUri != null && isInitialImageDisplay && !isEditing) {
+            Log.d("JournalScreen", "Newly captured image detected, ensuring expanded state and marking initial display complete.")
+            isImageMinimized = false
+            isInitialImageDisplay = false // Mark that the initial display has happened
+        }
+    }
+
 
     // Camera Permissions and Binding
     LaunchedEffect(Unit) { if (!hasCamPermission) permissionLauncher.launch(Manifest.permission.CAMERA) }
@@ -164,21 +204,21 @@ fun JournalScreen(
         }
     }
 
-    // Image Minimization Timer Effect
-    LaunchedEffect(capturedImageUri, isEditing, isImageMinimized) {
-        if (capturedImageUri != null && !isEditing && !isImageMinimized) {
-            Log.d("JournalScreen", "Starting image minimize timer.")
-            delay(IMAGE_MINIMIZE_DELAY_MS)
-            if (isActive && capturedImageUri != null && !isEditing && !isImageMinimized) {
-                Log.d("JournalScreen", "Timer finished, minimizing image.")
+    // Image Minimization Timer Effect: Runs when image is present, expanded, and for a NEW entry.
+    LaunchedEffect(isImageMinimized, capturedImageUri, isEditing) {
+        // Only start the timer if the image is currently SHOWN, exists, and it's a NEW entry.
+        if (!isImageMinimized && capturedImageUri != null && !isEditing) {
+            Log.d("JournalScreen", "Auto-minimize timer started (delay: ${IMAGE_AUTO_MINIMIZE_DELAY_MS}ms).")
+            delay(IMAGE_AUTO_MINIMIZE_DELAY_MS) // Use the constant for the delay duration
+            // Check conditions again after delay, in case state changed
+            if (isActive && !isImageMinimized && capturedImageUri != null && !isEditing) {
+                Log.d("JournalScreen", "Auto-minimize timer finished, minimizing image.")
                 isImageMinimized = true
             } else {
-                Log.d("JournalScreen", "Timer cancelled or state changed before completion.")
+                Log.d("JournalScreen", "Auto-minimize timer cancelled or conditions changed during delay.")
             }
         } else {
-            if (capturedImageUri != null) {
-                Log.d("JournalScreen", "Image minimize timer not started (isEditing: $isEditing, isMinimized: $isImageMinimized)")
-            }
+            Log.d("JournalScreen", "Auto-minimize timer conditions not met (minimized: $isImageMinimized, uri: ${capturedImageUri != null}, editing: $isEditing).")
         }
     }
 
@@ -190,7 +230,13 @@ fun JournalScreen(
             Box(Modifier.fillMaxSize()) {
                 AndroidView({ previewView }, Modifier.fillMaxSize())
                 Button(
-                    onClick = { if (cameraProvider != null && !isSaving) takePhoto(context, imageCapture, journalViewModel::onImageCaptured) },
+                    onClick = {
+                        if (cameraProvider != null && !isSaving) {
+                            // When photo is saved, capturedImageUri state changes,
+                            // triggering the LaunchedEffect(capturedImageUri) to handle expansion.
+                            takePhoto(context, imageCapture, journalViewModel::onImageCaptured)
+                        }
+                    },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).navigationBarsPadding().size(72.dp),
                     shape = CircleShape,
                     enabled = cameraProvider != null && !isSaving
@@ -213,7 +259,7 @@ fun JournalScreen(
             ) {
                 Spacer(Modifier.height(16.dp))
 
-                // --- Image Section ---
+                // --- Image Section with Minimization ---
                 if (capturedImageUri != null) {
                     AnimatedVisibility(visible = !isImageMinimized) {
                         Image(
@@ -224,16 +270,9 @@ fun JournalScreen(
                                 .aspectRatio(4f / 3f)
                                 .padding(bottom = 16.dp)
                                 .clip(MaterialTheme.shapes.medium)
-                                .then(
-                                    if (!isEditing) Modifier.clickable { isImageMinimized = true } else Modifier
-                                )
-                                .then(
-                                    if (isEditing) Modifier.border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                        MaterialTheme.shapes.medium
-                                    ) else Modifier
-                                )
+                                // Allow minimizing by clicking the image only for new entries
+                                .then(if (!isEditing) Modifier.clickable { isImageMinimized = true } else Modifier)
+                                .then(if (isEditing) Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), MaterialTheme.shapes.medium) else Modifier)
                         )
                     }
                     AnimatedVisibility(visible = isImageMinimized) {
@@ -241,7 +280,7 @@ fun JournalScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 16.dp)
-                                .clickable { isImageMinimized = false }
+                                .clickable { isImageMinimized = false } // Click row to expand
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -308,7 +347,7 @@ fun JournalScreen(
 
                 // --- AI Assistance Section ---
                 Text("AI Assistance", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                CollapsibleSuggestionCard(promptSuggestion, isLoadingPrompt) // Use new collapsible card
+                CollapsibleSuggestionCard(promptSuggestion, isLoadingPrompt) // Uses logic defined below
                 Spacer(Modifier.height(16.dp))
 
                 // Row for Prompt Type Dropdown and Button
@@ -347,7 +386,6 @@ fun JournalScreen(
                             }
                         }
                     }
-
                     Button(
                         onClick = { geminiViewModel.suggestJournalPrompt(selectedPromptType) },
                         enabled = !isLoadingPrompt && !isSaving
@@ -371,10 +409,14 @@ fun JournalScreen(
                     OutlinedButton(
                         onClick = {
                             val wasCurrentlyEditing = isEditing
-                            journalViewModel.clearJournalState()
+                            journalViewModel.clearJournalState() // Clears VM state (image uri, text, editing path)
+                            // Reset local UI state as well
+                            isImageMinimized = false
+                            isInitialImageDisplay = true
                             if (wasCurrentlyEditing) {
-                                navController.popBackStack()
+                                navController.popBackStack() // Navigate back if editing
                             }
+                            // If new entry, clearing VM state causes recomposition back to camera view
                         },
                         enabled = !isSaving
                     ) {
@@ -382,15 +424,19 @@ fun JournalScreen(
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Cancel")
                     }
-
                     Button(
                         onClick = {
                             journalViewModel.saveJournalEntry(context) { success, wasEditingMode ->
                                 if (success) {
+                                    // State cleared in VM. Reset local UI state too.
+                                    isImageMinimized = false
+                                    isInitialImageDisplay = true
                                     if (wasEditingMode) {
                                         navController.popBackStack()
                                     }
+                                    // If saving new entry, state clear in VM causes recomposition to camera view
                                 }
+                                // isSaving is handled within the VM callback
                             }
                         },
                         enabled = !isSaving && (isEditing || capturedImageUri != null || journalText.isNotBlank())
@@ -419,7 +465,7 @@ fun JournalScreen(
                     val textToShow = when {
                         !hasCamPermission -> "Camera permission needed to capture photos."
                         cameraProvider == null -> "Initializing Camera..."
-                        else -> "Loading..."
+                        else -> "Loading..." // Should ideally not happen
                     }
                     Text(textToShow, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
                     Spacer(Modifier.height(16.dp))
@@ -438,20 +484,15 @@ fun JournalScreen(
 
 @Composable
 fun CollapsibleSuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
-    // Initialize 'isExpanded' based on prompt length threshold and loading state
-    var isExpanded by remember(promptSuggestion, isLoadingPrompt) { // Key includes isLoadingPrompt
-        mutableStateOf(promptSuggestion.length < PROMPT_EXPAND_THRESHOLD && !isLoadingPrompt)
-    }
-    var isOverflowing by remember { mutableStateOf(false) } // Track if text overflows one line when collapsed
+    // Prompt state: Defaults collapsed, remembers user's expanded state across prompt regenerations
+    var isExpanded by remember { mutableStateOf(false) }
+    var isOverflowing by remember(promptSuggestion) { mutableStateOf(false) } // Recalculate on text change
 
-    // Determine if the toggle button should be shown based on overflow or expanded state
-    // (and not currently loading)
     val showToggleButton = (isOverflowing || isExpanded) && !isLoadingPrompt
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
-                // Only make clickable if the button is actually shown
                 .clickable(enabled = showToggleButton) { isExpanded = !isExpanded }
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
@@ -463,23 +504,21 @@ fun CollapsibleSuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean
                 Text(
                     text = promptSuggestion,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = if (isExpanded) Int.MAX_VALUE else 1, // Expand lines when state is true
+                    maxLines = if (isExpanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
                     onTextLayout = { textLayoutResult: TextLayoutResult ->
-                        // Check if height overflowed OR if more than one line was needed when collapsed
                         isOverflowing = textLayoutResult.didOverflowHeight || textLayoutResult.lineCount > 1
                     }
                 )
 
-                // Conditionally display either the loading indicator or the expand/collapse icon
                 if (isLoadingPrompt) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(start = 8.dp))
                 } else if (showToggleButton) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                         contentDescription = if (isExpanded) "Collapse prompt" else "Expand prompt",
-                        modifier = Modifier.size(24.dp).padding(start = 8.dp) // Keep consistent size/padding
+                        modifier = Modifier.size(24.dp).padding(start = 8.dp)
                     )
                 }
             }
@@ -488,11 +527,11 @@ fun CollapsibleSuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean
 }
 
 
-// --- Helper Function (takePhoto - no changes) ---
+// --- Helper Function (takePhoto) ---
 private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
-    onImageSaved: (Uri) -> Unit
+    onImageSaved: (Uri) -> Unit // Callback to update ViewModel
 ) {
     val cacheDir = context.cacheDir ?: run {
         Log.e("TakePhoto", "Cache directory is null.")
@@ -514,6 +553,7 @@ private fun takePhoto(
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
                 Log.d("JournalScreen", "Photo capture succeeded: $savedUri")
+                // Update ViewModel. The LaunchedEffect observing capturedImageUri will handle UI expansion.
                 onImageSaved(savedUri)
             }
         }
