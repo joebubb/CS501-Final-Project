@@ -1,3 +1,4 @@
+// /Users/josephbubb/Documents/bu/Spring2025/CS501-Mobile/final/CS501-Final-Project/pictonote/app/src/main/java/com/pictoteam/pictonote/model/GeminiViewModel.kt
 package com.pictoteam.pictonote.model
 
 import androidx.lifecycle.LiveData
@@ -17,31 +18,32 @@ class GeminiViewModel : ViewModel() {
     private val geminiApiKey = BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-1.5-flash" // best blend of intelligence and conciseness
 
-    // Journal Prompt
-    private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.") // Initial non-null value
+    // --- Existing States ---
+    private val _journalPromptSuggestion = MutableLiveData<String>("Click 'Prompt' for a suggestion.")
     val journalPromptSuggestion: LiveData<String> = _journalPromptSuggestion
 
     private val _isPromptLoading = MutableLiveData<Boolean>(false)
     val isPromptLoading: LiveData<Boolean> = _isPromptLoading
 
-    // Journal Reflection
-    private val _journalReflection = MutableLiveData<String>("") // Initial non-null value
+    private val _journalReflection = MutableLiveData<String>("")
     val journalReflection: LiveData<String> = _journalReflection
 
     private val _isReflectionLoading = MutableLiveData<Boolean>(false)
     val isReflectionLoading: LiveData<Boolean> = _isReflectionLoading
 
-    // weekly summary
-    private val _weeklySummary = MutableStateFlow<String?>("Generate summary...") // Can be null if error occurs
+    private val _weeklySummary = MutableStateFlow<String?>("Generate summary...")
     val weeklySummary: StateFlow<String?> = _weeklySummary.asStateFlow()
 
     private val _isWeeklySummaryLoading = MutableStateFlow<Boolean>(false)
     val isWeeklySummaryLoading: StateFlow<Boolean> = _isWeeklySummaryLoading.asStateFlow()
+    // --- End Existing States ---
+
 
     init {
         Log.d("GeminiViewModel", "ViewModel initialized.")
     }
 
+    // --- Private Helper ---
     private suspend fun generateContentFromPrompt(promptText: String, callerTag: String): String? {
         Log.d("GeminiViewModel", "$callerTag Coroutine launched. Preparing API call...")
         val request = GenerateContentRequest(
@@ -57,7 +59,7 @@ class GeminiViewModel : ViewModel() {
             val generatedText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             if (!generatedText.isNullOrBlank()) {
                 Log.i("GeminiViewModel", "$callerTag Generated Content: $generatedText")
-                generatedText.trim() // Return valid text
+                generatedText.trim()
             } else {
                 Log.w("GeminiViewModel", "$callerTag Received response, but generated text was null or empty.")
                 Log.d("GeminiViewModel", "$callerTag Full Response: $response")
@@ -74,36 +76,43 @@ class GeminiViewModel : ViewModel() {
         }
     }
 
-    fun suggestJournalPrompt() {
+    // --- Modified suggestJournalPrompt ---
+    fun suggestJournalPrompt(promptType: String) { // Added promptType parameter
         if (_isPromptLoading.value == true) return
 
         _isPromptLoading.value = true
-        // Post the loading message immediately, ensuring it's non-null
-        _journalPromptSuggestion.postValue("Generating prompt suggestion...")
-        val callerTag = "[JournalPrompt]"
+        _journalPromptSuggestion.postValue("Generating $promptType prompt...") // Show type in loading message
+        val callerTag = "[JournalPrompt-$promptType]"
 
         viewModelScope.launch {
-            val promptForGemini = "Suggest a thoughtful and inspiring journal prompt suitable for self-reflection."
+            // Construct the prompt based on the selected type
+            val promptForGemini = when (promptType) {
+                "Reflective" -> "Suggest a journal prompt focused on self-reflection about recent experiences, emotions, or lessons learned. Make it thoughtful."
+                "Creative" -> "Suggest an imaginative or creative writing prompt suitable for a journal entry. It could be a 'what if' scenario, a descriptive task, or a story starter."
+                "Goal-Oriented" -> "Suggest a journal prompt focused on setting, reviewing, or reflecting on personal goals, progress, or challenges."
+                "Gratitude" -> "Suggest a journal prompt focused on practicing gratitude or appreciating positive aspects of life."
+                // "Default" or any other case
+                else -> "Suggest a thoughtful and inspiring general-purpose journal prompt suitable for self-reflection."
+            }
+
+            Log.d("GeminiViewModel", "$callerTag Using Gemini prompt: $promptForGemini")
             val generatedPrompt = generateContentFromPrompt(promptForGemini, callerTag)
 
-            // Use the result if not null, otherwise post a specific error message
             val messageToPost = generatedPrompt ?: "Error fetching prompt suggestion."
             _journalPromptSuggestion.postValue(messageToPost)
-
             _isPromptLoading.postValue(false)
         }
     }
 
+    // --- Existing reflectOnJournalEntry ---
     fun reflectOnJournalEntry(journalEntry: String) {
         if (journalEntry.isBlank()) {
-            // Ensure non-null post
             _journalReflection.postValue("Please write something before asking for a reflection.")
             return
         }
         if (_isReflectionLoading.value == true) return
 
         _isReflectionLoading.value = true
-        // Post the loading message immediately, ensuring it's non-null
         _journalReflection.postValue("Generating reflection...")
         val callerTag = "[JournalReflection]"
 
@@ -120,34 +129,31 @@ class GeminiViewModel : ViewModel() {
             """.trimIndent()
 
             val generatedReflection = generateContentFromPrompt(promptForGemini, callerTag)
-
-            // Use the result if not null, otherwise post a specific error message. Both paths post non-null.
             val messageToPost = generatedReflection ?: "Error generating reflection for this entry."
             _journalReflection.postValue(messageToPost)
-
             _isReflectionLoading.postValue(false)
         }
     }
 
+    // --- Existing generateWeeklySummary ---
     fun generateWeeklySummary(allEntriesText: String) {
-        if (_isWeeklySummaryLoading.value) return // Don't start if already loading
+        if (_isWeeklySummaryLoading.value) return
         if (allEntriesText.isBlank()) {
             _weeklySummary.value = "No entries found in the last 7 days to summarize."
             return
         }
 
         _isWeeklySummaryLoading.value = true
-        _weeklySummary.value = "Generating summary..." // Indicate loading
+        _weeklySummary.value = "Generating summary..."
         val callerTag = "[WeeklySummary]"
 
         viewModelScope.launch {
-            // Prompt Engineering: Instruct Gemini clearly
             val promptForGemini = """
             You are an insightful assistant. Below is a collection of journal entries from the past 7 days.
             Please read through them and provide a concise summary (around 3-5 sentences) highlighting the main themes, activities, or emotions present.
-            Focus on providing a reflective overview rather than just listing events. If there are conflicting emotions or themes, briefly mention that complexity. 
-            If there is not enough to make a meaningful summary, just summarize what you can in 1-2 sentences and say that there was not much journaling this week. 
-            
+            Focus on providing a reflective overview rather than just listing events. If there are conflicting emotions or themes, briefly mention that complexity.
+            If there is not enough to make a meaningful summary, just summarize what you can in 1-2 sentences and say that there was not much journaling this week.
+
             Journal Entries Text:
             ---
             $allEntriesText
@@ -157,12 +163,12 @@ class GeminiViewModel : ViewModel() {
             """.trimIndent()
 
             val generatedSummary = generateContentFromPrompt(promptForGemini, callerTag)
-
-            // Update StateFlow on the main thread (implicitly handled by StateFlow)
-            _weeklySummary.value = generatedSummary ?: "Could not generate summary. Please try again later." // Provide user-friendly error message
+            _weeklySummary.value = generatedSummary ?: "Could not generate summary. Please try again later."
             _isWeeklySummaryLoading.value = false
         }
     }
+
+    // Keep _apiResult if used elsewhere
     private val _apiResult = MutableLiveData<String>("")
     val apiResult: LiveData<String> = _apiResult
 }

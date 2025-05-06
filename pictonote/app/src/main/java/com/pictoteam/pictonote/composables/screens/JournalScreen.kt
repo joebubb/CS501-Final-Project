@@ -29,11 +29,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor // For BasicTextField text style
+// import androidx.compose.ui.graphics.SolidColor // No longer needed if using MaterialTheme textStyle
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.TextStyle // For BasicTextField text style
+// import androidx.compose.ui.text.TextStyle // No longer needed if using MaterialTheme textStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -50,6 +50,10 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import java.io.File
 
+// Define prompt types here or import from Constants
+val promptTypes = listOf("Default", "Reflective", "Creative", "Goal-Oriented", "Gratitude")
+
+@OptIn(ExperimentalMaterial3Api::class) // Needed for ExposedDropdownMenuBox
 @Composable
 fun JournalScreen(
     navController: NavHostController,
@@ -60,39 +64,25 @@ fun JournalScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Helper suspend function to await ListenableFuture results
-    suspend fun <T> ListenableFuture<T>.await(): T {
-        return suspendCancellableCoroutine { continuation ->
-            addListener({
-                try { continuation.resume(get()) }
-                catch (e: Exception) { continuation.resumeWithException(e) }
-            }, ContextCompat.getMainExecutor(context)) // Use main executor for listener
-
-            continuation.invokeOnCancellation { cancel(true) }
-        }
-    }
-
-    // State from JournalViewModel
+    // --- State Declarations ---
     val capturedImageUri by journalViewModel.capturedImageUri.collectAsStateWithLifecycle()
     val journalText by journalViewModel.journalText.collectAsStateWithLifecycle()
     val isSaving by journalViewModel.isSaving.collectAsStateWithLifecycle()
-    // isEditing is now derived state flow in ViewModel, collect it here
     val isEditing by journalViewModel.isEditing.collectAsStateWithLifecycle()
 
-    // State from GeminiViewModel
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for suggestion")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
     val reflectionResult by geminiViewModel.journalReflection.observeAsState("")
     val isLoadingReflection by geminiViewModel.isReflectionLoading.observeAsState(false)
 
-    // CameraX Setup
+    // Camera related state
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     var cameraProvider: ProcessCameraProvider? by remember { mutableStateOf(null) }
     val previewView = remember { PreviewView(context).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE; scaleType = PreviewView.ScaleType.FILL_CENTER } }
     val imageCapture: ImageCapture = remember { ImageCapture.Builder().build() }
-    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA // Use back camera
+    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-    // Camera Permission Handling
+    // Permission state
     var hasCamPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCamPermission = granted
@@ -101,32 +91,42 @@ fun JournalScreen(
         }
     }
 
-    // Effect to load entry for editing OR clear state for new entry
+    // Dropdown Menu State
+    var isPromptDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedPromptType by remember { mutableStateOf(promptTypes[0]) } // Default selection
+
+
+    // --- Helper Functions ---
+    suspend fun <T> ListenableFuture<T>.await(): T {
+        return suspendCancellableCoroutine { continuation ->
+            addListener({
+                try { continuation.resume(get()) }
+                catch (e: Exception) { continuation.resumeWithException(e) }
+            }, ContextCompat.getMainExecutor(context))
+            continuation.invokeOnCancellation { cancel(true) }
+        }
+    }
+
+    // --- Effects ---
     LaunchedEffect(entryFilePathToEdit, journalViewModel) {
+        // ... (existing load/clear logic - no changes needed here) ...
         if (entryFilePathToEdit != null) {
-            // We are editing an existing entry
             Log.d("JournalScreen", "Effect: Received potential edit path (encoded): $entryFilePathToEdit")
             try {
-                // DECODE the path received from navigation argument
                 val decodedPath = Uri.decode(entryFilePathToEdit)
                 Log.d("JournalScreen", "Effect: Decoded path for loading: $decodedPath")
-                // Load the entry using the decoded path
                 journalViewModel.loadEntryForEditing(context, decodedPath)
             } catch (e: IllegalArgumentException) {
-                // Handle bad encoding / invalid path format
                 Log.e("JournalScreen", "Error decoding file path for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error: Invalid entry identifier.", Toast.LENGTH_SHORT).show()
-                navController.popBackStack() // Go back if path is invalid
+                navController.popBackStack()
             }
             catch (e: Exception) {
-                // Handle other errors during loading (e.g., file not found by ViewModel)
                 Log.e("JournalScreen", "Error loading entry for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error loading entry for editing.", Toast.LENGTH_SHORT).show()
-                navController.popBackStack() // Go back if loading fails
+                navController.popBackStack()
             }
         } else {
-            // We are creating a new entry (path is null)
-            // Clear state only if the VM isn't already in a new entry state and not currently editing
             if (!journalViewModel.isNewEntryState() && !journalViewModel.isEditing.value) {
                 Log.d("JournalScreen", "Effect: Clearing state for new entry.")
                 journalViewModel.clearJournalState()
@@ -136,170 +136,152 @@ fun JournalScreen(
         }
     }
 
-    // Request Camera Permission if needed
-    LaunchedEffect(Unit) {
-        if (!hasCamPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-    }
-
-    // Get CameraProvider instance asynchronously
-    LaunchedEffect(lifecycleOwner) { // Depends on lifecycle owner
-        try {
-            cameraProvider = cameraProviderFuture.await()
-            Log.d("JournalScreen", "CameraProvider obtained.")
-        } catch (e: Exception) {
-            Log.e("JournalScreen", "Failed to get CameraProvider.", e)
-            // Show error or handle appropriately
-        }
-    }
-
-    // Bind CameraX Use Cases to Lifecycle
+    LaunchedEffect(Unit) { if (!hasCamPermission) permissionLauncher.launch(Manifest.permission.CAMERA) }
+    LaunchedEffect(lifecycleOwner) { try { cameraProvider = cameraProviderFuture.await() } catch (e: Exception) { Log.e("JournalScreen", "Cam provider fail", e) } }
     LaunchedEffect(cameraProvider, hasCamPermission, lifecycleOwner) {
         if (hasCamPermission && cameraProvider != null) {
             try {
-                cameraProvider?.unbindAll() // Unbind previous use cases
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                // Bind preview and image capture use cases
+                cameraProvider?.unbindAll()
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                 cameraProvider?.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
-                Log.d("JournalScreen", "CameraX use cases bound.")
-            } catch (exc: Exception) {
-                Log.e("JournalScreen", "CameraX use case binding failed", exc)
-            }
-        } else {
-            Log.d("JournalScreen", "Skipping CameraX binding (Permission: $hasCamPermission, Provider: ${cameraProvider != null})")
+            } catch (exc: Exception) { Log.e("JournalScreen", "Cam bind fail", exc) }
         }
     }
 
-    // Determine Screen Content based on state
+
+    // --- UI Composition ---
     when {
-        // --- State 1: Show Camera Preview (New Entry, No Image Yet, Has Permission) ---
+        // State 1: Camera Preview
         !isEditing && capturedImageUri == null && hasCamPermission -> {
             Box(Modifier.fillMaxSize()) {
-                AndroidView({ previewView }, Modifier.fillMaxSize()) // Camera preview fills the screen
-                // Take Photo Button
+                AndroidView({ previewView }, Modifier.fillMaxSize())
                 Button(
-                    onClick = {
-                        if (cameraProvider != null && !isSaving) {
-                            takePhoto(context, imageCapture, journalViewModel::onImageCaptured)
-                        } else {
-                            Log.w("JournalScreen", "Photo button clicked but provider null or saving.")
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp)
-                        .navigationBarsPadding() // Adjust for navigation bar
-                        .size(72.dp),
+                    onClick = { if (cameraProvider != null && !isSaving) takePhoto(context, imageCapture, journalViewModel::onImageCaptured) },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).navigationBarsPadding().size(72.dp),
                     shape = CircleShape,
-                    enabled = cameraProvider != null && !isSaving // Enable only when camera ready and not saving
-                ) {
-                    Icon(Icons.Filled.AddCircle, contentDescription = "Take Photo", modifier = Modifier.size(36.dp))
-                }
+                    enabled = cameraProvider != null && !isSaving
+                ) { Icon(Icons.Filled.AddCircle, "Take Photo", modifier = Modifier.size(36.dp)) }
             }
         }
 
-        // --- State 2: Show Entry Form (Image Captured OR Editing Existing Entry) ---
+        // State 2: Entry Form
         capturedImageUri != null || isEditing -> {
             val screenPadding = if (LocalConfiguration.current.screenWidthDp >= 600) 24.dp else 16.dp
             Column(
-                Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding() // Adjust for status bar
-                    .padding(horizontal = screenPadding)
-                    .verticalScroll(rememberScrollState()) // Allow scrolling for long content
-                    .padding(bottom = 16.dp) // Padding at the very bottom
+                Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = screenPadding)
+                    .verticalScroll(rememberScrollState()).padding(bottom = 16.dp)
             ) {
-                Spacer(Modifier.height(16.dp)) // Space from top edge
+                Spacer(Modifier.height(16.dp))
 
-                // Display Image (if available)
+                // Image Display (if available)
                 if (capturedImageUri != null) {
                     Image(
                         painter = rememberAsyncImagePainter(model = capturedImageUri),
                         contentDescription = if (isEditing) "Journal image (non-editable)" else "Captured journal image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(4f / 3f) // Maintain aspect ratio
-                            .padding(bottom = 16.dp)
-                            // Add a subtle border if editing to indicate it's part of the saved entry
+                        modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).padding(bottom = 16.dp)
                             .then(if (isEditing) Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)) else Modifier)
                     )
                 } else if (isEditing) {
-                    // Placeholder text if editing a text-only entry
-                    Text(
-                        "Editing text-only entry",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(vertical = 16.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
+                    Text("Editing text-only entry", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
                 }
 
                 // Journal Text Input Area
-                Text(
-                    "Journal Entry",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
                 BasicTextField(
                     value = journalText,
                     onValueChange = { journalViewModel.updateJournalText(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = 150.dp) // Ensure decent height
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 150.dp)
                         .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
-                        .padding(horizontal = 16.dp, vertical = 12.dp), // Internal padding
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                    // Placeholder implementation for BasicTextField
                     decorationBox = { innerTextField ->
                         Box(modifier = Modifier.fillMaxWidth()) {
                             if (journalText.isEmpty()) {
-                                Text(
-                                    "Add your thoughts...",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.outline // Use outline color for placeholder
-                                )
+                                Text("Add your thoughts...", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outline)
                             }
-                            innerTextField() // The actual text input field
+                            innerTextField()
                         }
                     }
                 )
                 Spacer(Modifier.height(24.dp))
 
                 // AI Assistance Section
-                Text(
-                    "AI Assistance",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                SuggestionCard(promptSuggestion, isLoadingPrompt)
+                Text("AI Assistance", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+                SuggestionCard(promptSuggestion, isLoadingPrompt) // Displays the generated prompt
                 Spacer(Modifier.height(16.dp))
-                ReflectionCard(journalText, reflectionResult, isLoadingReflection)
-                Spacer(Modifier.height(16.dp))
-                // AI Action Buttons
+
+                // --- Row for Prompt Type Dropdown and Button ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp) // Add space between dropdown and button
                 ) {
+                    // Prompt Type Dropdown
+                    ExposedDropdownMenuBox(
+                        expanded = isPromptDropdownExpanded,
+                        onExpandedChange = { isPromptDropdownExpanded = !isPromptDropdownExpanded },
+                        modifier = Modifier.weight(1f) // Let dropdown take available space
+                    ) {
+                        OutlinedTextField( // Use OutlinedTextField for consistency
+                            value = selectedPromptType,
+                            onValueChange = {}, // Read-only
+                            readOnly = true,
+                            label = { Text("Prompt Type") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isPromptDropdownExpanded) },
+                            modifier = Modifier.menuAnchor() // Important for positioning
+                        )
+                        ExposedDropdownMenu(
+                            expanded = isPromptDropdownExpanded,
+                            onDismissRequest = { isPromptDropdownExpanded = false }
+                        ) {
+                            promptTypes.forEach { selectionOption ->
+                                DropdownMenuItem(
+                                    text = { Text(selectionOption) },
+                                    onClick = {
+                                        selectedPromptType = selectionOption
+                                        isPromptDropdownExpanded = false
+                                        Log.d("JournalScreen", "Selected prompt type: $selectedPromptType")
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Prompt Button
                     Button(
-                        onClick = { geminiViewModel.suggestJournalPrompt() },
-                        enabled = !isLoadingPrompt && !isLoadingReflection && !isSaving // Disable if AI busy or saving
-                    ) { Text("Prompt") }
-                    Button(
-                        onClick = { geminiViewModel.reflectOnJournalEntry(journalText) },
-                        enabled = !isLoadingReflection && !isLoadingPrompt && journalText.isNotBlank() && !isSaving // Disable if AI busy, text empty, or saving
-                    ) { Text("Reflect") }
+                        onClick = {
+                            // Call ViewModel with the currently selected type
+                            geminiViewModel.suggestJournalPrompt(selectedPromptType)
+                        },
+                        enabled = !isLoadingPrompt && !isLoadingReflection && !isSaving
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)) // Changed Icon
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Prompt")
+                    }
                 }
+                // --- End Row ---
+
+                Spacer(Modifier.height(16.dp)) // Space below prompt controls
+                ReflectionCard(journalText, reflectionResult, isLoadingReflection)
+                Spacer(Modifier.height(16.dp))
+
+                // Reflect Button (Moved outside the Row)
+                Button(
+                    onClick = { geminiViewModel.reflectOnJournalEntry(journalText) },
+                    enabled = !isLoadingReflection && !isLoadingPrompt && journalText.isNotBlank() && !isSaving,
+                    modifier = Modifier.align(Alignment.End) // Align to the end
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize)) // Changed Icon
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Reflect")
+                }
+
                 Spacer(Modifier.height(32.dp)) // More space before final action buttons
 
                 // Cancel / Save/Update Buttons
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp), // Bottom padding before end of screen
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -307,21 +289,15 @@ fun JournalScreen(
                     OutlinedButton(
                         onClick = {
                             if (isEditing) {
-                                // If editing, simply go back (likely to ViewEntryScreen)
                                 navController.popBackStack()
-                                // ViewModel state might reset on load or save, but clear here ensures clean state if user cancels mid-edit
                                 journalViewModel.clearJournalState()
                             } else {
-                                // If creating a new entry, clear the state (image & text)
                                 journalViewModel.clearJournalState()
-                                // Optionally navigate away, e.g., back to Home or Archive,
-                                // or stay on the (now empty) Journal screen. Current behavior is to stay.
-                                // navController.popBackStack() // Or navigate somewhere specific
                             }
                         },
-                        enabled = !isSaving // Disable while saving
+                        enabled = !isSaving
                     ) {
-                        Icon(Icons.Default.Clear, contentDescription = "Cancel", modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.Default.Clear, "Cancel", modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("Cancel")
                     }
@@ -332,33 +308,20 @@ fun JournalScreen(
                             journalViewModel.saveJournalEntry(context) { success, wasEditingMode ->
                                 if (success) {
                                     if (wasEditingMode) {
-                                        // If editing succeeded, pop back (likely from JournalScreen to ViewEntryScreen)
                                         navController.popBackStack()
-                                    } else {
-                                        // If new entry saved successfully, the state is cleared by VM.
-                                        // Stay on the (now blank) Journal screen ready for the next entry,
-                                        // or navigate somewhere else if preferred.
-                                        // e.g., navController.navigate(ROUTE_HOME) { popUpTo(ROUTE_HOME){ inclusive = true } }
                                     }
+                                    // State is cleared in VM on success
                                 }
-                                // If save failed (success is false), stay on the screen.
-                                // VM keeps state, user can retry or cancel. isSaving becomes false.
+                                // Failure case handled in VM (isSaving becomes false)
                             }
                         },
-                        // Enable if not saving AND (editing OR has image/text for new entry)
                         enabled = !isSaving && (isEditing || capturedImageUri != null || journalText.isNotBlank())
                     ) {
                         if (isSaving) {
-                            // Show progress indicator when saving
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary, // Color suitable for button background
-                                strokeWidth = 2.dp
-                            )
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         } else {
-                            // Show icon and text otherwise
                             val buttonText = if (isEditing) "Update Entry" else "Save Entry"
-                            Icon(Icons.Default.Check, contentDescription = buttonText, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Icon(Icons.Default.Check, buttonText, modifier = Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                             Text(buttonText)
                         }
@@ -367,40 +330,23 @@ fun JournalScreen(
             }
         }
 
-        // --- State 3: Fallback (Permission Denied or Camera Initializing) ---
+        // State 3: Fallback
         else -> {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(16.dp), // Add padding
+                modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     val textToShow = when {
                         !hasCamPermission -> "Camera permission needed to capture photos."
                         cameraProvider == null -> "Initializing Camera..."
-                        else -> "Loading..." // Generic fallback
+                        else -> "Loading..."
                     }
-                    Text(
-                        textToShow,
-                        style = MaterialTheme.typography.titleLarge,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
+                    Text(textToShow, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
                     Spacer(Modifier.height(16.dp))
-                    // Show permission button only if permission is denied
                     if (!hasCamPermission) {
-                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                            Text("Grant Permission")
-                        }
-                    }
-                    // Show progress indicator if camera is initializing
-                    else if (cameraProvider == null) {
+                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) { Text("Grant Permission") }
+                    } else if (cameraProvider == null) {
                         CircularProgressIndicator()
                     }
                 }
@@ -410,25 +356,20 @@ fun JournalScreen(
 }
 
 
-// --- Helper Composables (SuggestionCard, ReflectionCard) ---
+// --- Helper Composables (SuggestionCard, ReflectionCard - no changes) ---
 
 @Composable
 fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp), // Ensure minimum height
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = promptSuggestion,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier
-                    .weight(1f, fill = false) // Take available space, don't expand infinitely
-                    .padding(end = 8.dp) // Space between text and indicator
+                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
             )
             if (isLoadingPrompt) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -441,26 +382,20 @@ fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
 fun ReflectionCard(entryText: String, reflectionResult: String, isLoadingReflection: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = 48.dp), // Ensure minimum height
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Determine the text to display based on loading state and content
             val textToShow = when {
                 isLoadingReflection -> "Generating reflection..."
                 reflectionResult.isBlank() && entryText.isNotBlank() -> "Click 'Reflect' for insights."
                 reflectionResult.isBlank() && entryText.isBlank() -> "Write an entry first."
-                else -> reflectionResult // Show the actual reflection if available
+                else -> reflectionResult
             }
             Text(
                 text = textToShow,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier
-                    .weight(1f, fill = false) // Take available space
-                    .padding(end = 8.dp) // Space before indicator
+                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
             )
             if (isLoadingReflection) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -470,45 +405,33 @@ fun ReflectionCard(entryText: String, reflectionResult: String, isLoadingReflect
 }
 
 
-// --- Helper Function (takePhoto) ---
+// --- Helper Function (takePhoto - no changes) ---
 
 private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
     onImageSaved: (Uri) -> Unit
 ) {
-    // Use app's cache directory for temporary storage
     val cacheDir = context.cacheDir ?: run {
-        Log.e("TakePhoto", "Cache directory is null. Cannot save photo.")
+        Log.e("TakePhoto", "Cache directory is null.")
         Toast.makeText(context, "Storage Error", Toast.LENGTH_SHORT).show()
         return
     }
-    // Ensure cache directory exists
-    if (!cacheDir.exists()) {
-        cacheDir.mkdirs()
-    }
-
-    // Create a unique filename using timestamp
+    if (!cacheDir.exists()) { cacheDir.mkdirs() }
     val photoFile = File(cacheDir, "PICNOTE_IMG_${System.currentTimeMillis()}.jpg")
-
-    // Configure output options
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-    // Take picture using ImageCapture use case
     imageCapture.takePicture(
         outputOptions,
-        ContextCompat.getMainExecutor(context), // Execute callback on main thread
+        ContextCompat.getMainExecutor(context),
         object : ImageCapture.OnImageSavedCallback {
             override fun onError(exc: ImageCaptureException) {
                 Log.e("JournalScreen", "Photo capture failed: ${exc.message}", exc)
                 Toast.makeText(context, "Photo Capture Error: ${exc.message}", Toast.LENGTH_LONG).show()
             }
-
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                // Get the URI of the saved file
                 val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
                 Log.d("JournalScreen", "Photo capture succeeded: $savedUri")
-                // Notify the ViewModel (or caller) about the saved image URI
                 onImageSaved(savedUri)
             }
         }
