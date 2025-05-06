@@ -80,7 +80,14 @@ suspend fun getJournalTextForDateRange(context: Context, startDate: LocalDate, e
                 if (allText.isNotEmpty()) {
                     allText.append("\n\n")
                 }
-                allText.append("--- Entry from ${file.name.substringAfter("journal_").substringBefore(".txt")} ---")
+                // Extract timestamp correctly, handling both formats
+                val namePart = file.name.substringAfter("journal_")
+                val timestampStr = if (namePart.contains("_")) {
+                    namePart.substringBefore(".txt") // Includes date and time
+                } else {
+                    namePart.removeSuffix(".txt") // Just the date
+                }
+                allText.append("--- Entry from $timestampStr ---")
                 allText.append("\n")
                 allText.append(entryText)
             }
@@ -117,24 +124,35 @@ suspend fun getDatesWithEntriesForPastWeek(context: Context): Set<LocalDate> = w
     return@withContext datesWithEntries
 }
 
-// New function to calculate the current consecutive streak ending today
+// New function to calculate the current consecutive streak (Snapchat-style)
 fun calculateCurrentStreak(datesWithEntries: Set<LocalDate>): Int {
     val today = LocalDate.now()
-    if (!datesWithEntries.contains(today)) {
-        // If no entry for today, streak is 0
+    val yesterday = today.minusDays(1)
+
+    // Determine the anchor day for the streak calculation
+    val anchorDay = when {
+        datesWithEntries.contains(today) -> today       // If entry today, anchor is today
+        datesWithEntries.contains(yesterday) -> yesterday // If no entry today but entry yesterday, anchor is yesterday
+        else -> null                                      // Otherwise, no anchor, streak is 0
+    }
+
+    // If no entry today or yesterday, the streak is broken
+    if (anchorDay == null) {
+        Log.d("StreakLogic", "No entry today or yesterday. Streak is 0.")
         return 0
     }
 
-    var currentStreak = 1 // Start with 1 for today
-    var previousDay = today.minusDays(1)
+    // Start counting from the anchor day
+    var currentStreak = 1 // Start with 1 for the anchor day
+    var previousDayToCheck = anchorDay.minusDays(1)
 
-    // Count backwards as long as consecutive days have entries
-    while (datesWithEntries.contains(previousDay)) {
+    // Count backwards consecutively
+    while (datesWithEntries.contains(previousDayToCheck)) {
         currentStreak++
-        previousDay = previousDay.minusDays(1)
+        previousDayToCheck = previousDayToCheck.minusDays(1)
     }
 
-    Log.d("StreakLogic", "Calculated current streak: $currentStreak")
+    Log.d("StreakLogic", "Calculated streak: $currentStreak (Based on last entry: $anchorDay)")
     return currentStreak
 }
 
@@ -165,16 +183,14 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) { // Inject ViewM
         val startDate = endDate.minusDays(6) // Get entries from last 7 days including today
         val fetchedText = getJournalTextForDateRange(context, startDate, endDate)
         geminiViewModel.generateWeeklySummary(fetchedText)
-        // Streak data will be recalculated within the StreakCard's remember block
     }
 
     // State for streak data, recalculated when refreshTrigger changes
-    // We use context and refreshTrigger as keys to force recalculation when files might have changed
-    // or when a manual refresh is triggered.
     val datesWithEntries by produceState<Set<LocalDate>>(initialValue = emptySet(), context, refreshTrigger) {
         value = getDatesWithEntriesForPastWeek(context)
     }
     val currentStreak by remember(datesWithEntries) {
+        // Use the updated calculation logic here
         derivedStateOf { calculateCurrentStreak(datesWithEntries) }
     }
 
@@ -183,14 +199,14 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) { // Inject ViewM
         screenWidthDp >= 840 && orientation == Configuration.ORIENTATION_LANDSCAPE -> {
             Column(modifier = contentModifier) {
                 Text("Home Page", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(16.dp)) // Space below title
+                Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxSize().padding(vertical = 0.dp), Arrangement.spacedBy(24.dp), Alignment.Top) {
                     // Left Column
-                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { // Make left column scrollable
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         StreakCard(
                             modifier = commonCardModifier.fillMaxWidth(),
-                            datesWithEntries = datesWithEntries, // Pass data
-                            currentStreak = currentStreak // Pass data
+                            datesWithEntries = datesWithEntries,
+                            currentStreak = currentStreak
                         )
                         WeeklySummaryCard(
                             modifier = commonCardModifier.fillMaxWidth(),
@@ -212,7 +228,7 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) { // Inject ViewM
         }
         else -> { // Portrait or smaller screens
             Column(
-                contentModifier.verticalScroll(rememberScrollState()), // Apply verticalScroll here
+                contentModifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -223,8 +239,8 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) { // Inject ViewM
 
                 StreakCard(
                     modifier = commonCardModifier.then(cardWidthModifier),
-                    datesWithEntries = datesWithEntries, // Pass data
-                    currentStreak = currentStreak // Pass data
+                    datesWithEntries = datesWithEntries,
+                    currentStreak = currentStreak
                 )
                 RemindersCard(commonCardModifier.then(cardWidthModifier))
                 WeeklySummaryCard(
@@ -237,23 +253,22 @@ fun HomeScreen(geminiViewModel: GeminiViewModel = viewModel()) { // Inject ViewM
                         }
                     }
                 )
-                Spacer(Modifier.height(16.dp)) // Add padding at the bottom
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
 }
 
-// --- Streak Card Composable (Refactored) ---
+// --- Streak Card Composable (Refactored with new streak display logic) ---
 @Composable
 fun StreakCard(
     modifier: Modifier = Modifier,
     datesWithEntries: Set<LocalDate>, // Receive pre-calculated data
-    currentStreak: Int // Receive pre-calculated data
+    currentStreak: Int // Receive pre-calculated data (now using the new logic)
 ) {
     val today = LocalDate.now()
-    // Generate the list of dates for the past week ending today
     val pastWeekDates = remember(today) {
-        List(7) { i -> today.minusDays((6 - i).toLong()) } // today is last element (index 6)
+        List(7) { i -> today.minusDays((6 - i).toLong()) }
     }
 
     Card(modifier = modifier) {
@@ -266,77 +281,97 @@ fun StreakCard(
             Text("Streak", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
 
-            // Display the current streak count
-            Text(
-                text = "$currentStreak Day${if (currentStreak != 1) "s" else ""} 🔥",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary
-            )
+            // --- Display the streak number (or 0 if no streak) ---
+            val streakNumberText = if (currentStreak > 0) {
+                "$currentStreak Day${if (currentStreak != 1) "s" else ""}"
+            } else {
+                "0 Days" // Simple display for no streak
+            }
+            // Color is primary if streak > 0, otherwise muted
+            val streakColor = if (currentStreak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = streakNumberText,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = streakColor
+                )
+                // Show fire emoji only if there's an active streak > 0
+                if(currentStreak > 0) {
+                    Spacer(Modifier.width(4.dp))
+                    Text("🔥", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            // --- End streak number display ---
+
             Spacer(Modifier.height(16.dp))
 
-            // Row for the day indicators
+            // --- Row for the day indicators ---
+            // This part visually represents whether an entry exists for each specific day
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround, // Distribute space evenly
+                horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 pastWeekDates.forEach { date ->
                     val dayInitial = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()).first()
                     val isToday = date.isEqual(today)
+                    // Check if an entry *actually* exists for this specific date
                     val hasEntry = datesWithEntries.contains(date)
 
-                    // Determine colors based on state
+                    // Determine colors based on whether the entry for *that specific day* was made
                     val (backgroundColor, textColor, borderColor) = when {
-                        // Today with an entry
+                        // Today with an entry: Filled and highlighted
                         isToday && hasEntry -> Triple(
                             MaterialTheme.colorScheme.primary,
                             MaterialTheme.colorScheme.onPrimary,
-                            MaterialTheme.colorScheme.primary // Border matches background
+                            MaterialTheme.colorScheme.primary
                         )
-                        // Today without an entry
+                        // Today *without* an entry: Distinctly outlined/colored to show it's missing
                         isToday && !hasEntry -> Triple(
-                            MaterialTheme.colorScheme.surfaceVariant, // Slightly highlighted background
+                            MaterialTheme.colorScheme.surfaceVariant, // Use a distinct background
                             MaterialTheme.colorScheme.onSurfaceVariant,
-                            MaterialTheme.colorScheme.secondary // Distinct border for today
+                            MaterialTheme.colorScheme.secondary // Use a distinct border
                         )
-                        // Past day with an entry
+                        // Past day with an entry: Filled but muted
                         !isToday && hasEntry -> Triple(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f), // Muted completed color
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
                             MaterialTheme.colorScheme.onPrimaryContainer,
-                            Color.Transparent // No special border
+                            Color.Transparent
                         )
-                        // Past day without an entry
+                        // Past day without an entry: Muted empty state
                         else -> Triple(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), // Very muted empty color
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            Color.Transparent // No border
+                            Color.Transparent
                         )
                     }
 
-                    val boxSize = 40.dp // Slightly larger for better visibility
+                    val boxSize = 40.dp
 
                     Box(
                         modifier = Modifier
                             .size(boxSize)
-                            .clip(CircleShape) // Make it circular
+                            .clip(CircleShape)
                             .border(
                                 width = if (isToday) 2.dp else 1.dp, // Thicker border for today
-                                color = if (isToday) borderColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), // Use calculated or default border
+                                color = if (isToday) borderColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                                 shape = CircleShape
                             )
                             .background(backgroundColor)
-                            .padding(4.dp), // Inner padding
+                            .padding(4.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "$dayInitial",
                             color = textColor,
-                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal, // Bold text for today
-                            fontSize = 14.sp // Adjust font size as needed
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 14.sp
                         )
                     }
                 }
             }
+            // --- End day indicators ---
         }
     }
 }
@@ -356,7 +391,7 @@ fun RemindersCard(modifier: Modifier = Modifier) {
     }
 }
 
-// --- Weekly Summary Card (No Changes Needed from Previous Step) ---
+// --- Weekly Summary Card (No Changes) ---
 @Composable
 fun WeeklySummaryCard(
     modifier: Modifier = Modifier,
