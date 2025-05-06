@@ -4,7 +4,7 @@ import android.app.Activity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.verticalScroll // Standard vertical scroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudSync
@@ -47,8 +47,10 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var isSyncing by remember { mutableStateOf(false) }
     var syncStatusMessage by remember { mutableStateOf<String?>(null) }
-    var currentSyncPhase by remember { mutableStateOf("") }
+    var currentSyncPhase by remember { mutableStateOf("") } // To show "Uploading..." or "Downloading..."
     var showDbSetupDialog by remember { mutableStateOf(false) }
+
+    val scrollState = rememberScrollState() // For the main Column
 
     LaunchedEffect(Unit) {
         if (!checkFirestoreDatabaseConfigured(context)) {
@@ -68,7 +70,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState) // Standard vertical scroll for the entire screen
             .padding(16.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -83,6 +85,17 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
             currentSizeSp = settings.baseFontSize,
             onSizeChange = { newSize -> settingsViewModel.updateBaseFontSize(newSize) }
         )
+        Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
+
+        SettingItem(
+            title = "Auto-Sync Entries",
+            description = "Automatically sync entries when saved or updated."
+        ) {
+            Switch(
+                checked = settings.autoSyncEnabled,
+                onCheckedChange = { settingsViewModel.updateAutoSyncEnabled(it) }
+            )
+        }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
         SettingItem(title = "Push Notifications", description = "Receive reminders and updates") {
@@ -109,50 +122,72 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         Text("Cloud Sync", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Backup & sync journal entries and images.",
+            "Manually backup & sync all journal entries and images.",
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(12.dp))
 
-        syncStatusMessage?.let {
-            val isError = it.contains("Error", ignoreCase = true) || it.contains("Failed", ignoreCase = true)
-            val isSuccess = it.contains("Complete", ignoreCase = true) && !isError
+        syncStatusMessage?.let { message ->
+            val hasFailedText = message.contains("failed", ignoreCase = true) || message.contains("issues", ignoreCase = true)
+            val isErrorText = message.contains("Error", ignoreCase = true)
+            // A sync is successful if it contains "handled" and no failure/error keywords.
+            val isCompleteSuccess = message.contains("handled.", ignoreCase = true) && !hasFailedText && !isErrorText
+
             val textColor = when {
-                isError -> MaterialTheme.colorScheme.error
-                isSuccess -> MaterialTheme.colorScheme.primary
+                isErrorText || (message.startsWith("Manual Sync") && hasFailedText) -> MaterialTheme.colorScheme.error
+                isCompleteSuccess -> MaterialTheme.colorScheme.primary // Success color
                 else -> MaterialTheme.colorScheme.onSurfaceVariant // Neutral for in-progress
             }
             Text(
-                it, style = MaterialTheme.typography.bodyMedium,
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
                 color = textColor,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
             )
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Button(
                 onClick = {
                     if (!isSyncing) {
-                        isSyncing = true; currentSyncPhase = ""; syncStatusMessage = "Preparing sync..."
+                        isSyncing = true
+                        currentSyncPhase = "" // Reset phase display
+                        syncStatusMessage = "Preparing manual sync..."
                         scope.launch {
                             if (!checkFirestoreDatabaseConfigured(context)) {
-                                showDbSetupDialog = true; isSyncing = false; syncStatusMessage = "Error: Database not configured."; return@launch
+                                showDbSetupDialog = true
+                                isSyncing = false
+                                syncStatusMessage = "Error: Database not configured."
+                                return@launch
                             }
-                            synchronizeAllJournalEntries(context,
-                                onPhaseChange = { phase -> currentSyncPhase = phase; syncStatusMessage = "$phase..." },
-                                onProgress = { phase, current, total -> syncStatusMessage = "$phase ($current/$total)" },
+                            synchronizeAllJournalEntries(
+                                context = context,
+                                onPhaseChange = { phase ->
+                                    currentSyncPhase = phase // Store the current phase
+                                    syncStatusMessage = "$phase..."
+                                },
+                                onProgress = { phaseArgument, current, total -> // Use phase from progress
+                                    // Ensure currentSyncPhase is updated if it changed
+                                    if(currentSyncPhase.isEmpty() || currentSyncPhase != phaseArgument) currentSyncPhase = phaseArgument
+                                    syncStatusMessage = "$currentSyncPhase ($current/$total)"
+                                },
                                 onComplete = { totalUniqueEntries, totalSuccessfullySynced ->
-                                    isSyncing = false; currentSyncPhase = ""
+                                    isSyncing = false
+                                    currentSyncPhase = "" // Clear phase on completion
                                     val failures = totalUniqueEntries - totalSuccessfullySynced
                                     syncStatusMessage = if (totalUniqueEntries > 0) {
-                                        "Sync Complete: $totalSuccessfullySynced/$totalUniqueEntries files handled."
+                                        "Manual Sync: $totalSuccessfullySynced/$totalUniqueEntries handled."
                                     } else {
-                                        "Sync Complete: No files needed syncing."
+                                        "Manual Sync: No files needed syncing."
                                     }
                                     if (failures > 0) {
                                         syncStatusMessage += " ($failures had issues)"
@@ -165,27 +200,47 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
                 enabled = !isSyncing,
                 modifier = Modifier.weight(1f)
             ) {
-                if (isSyncing) {
-                    CircularProgressIndicator(Modifier.size(20.dp), MaterialTheme.colorScheme.onPrimary, 2.dp)
-                    Spacer(Modifier.width(8.dp)); Text("Syncing...")
+                if (isSyncing && currentSyncPhase.isNotEmpty()) { // Show indicator only when actively syncing
+                    CircularProgressIndicator(
+                        Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Syncing...")
                 } else {
-                    Icon(Icons.Default.CloudSync, "Sync"); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Sync")
+                    Icon(
+                        Icons.Default.CloudSync,
+                        contentDescription = "Manual Sync",
+                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Sync")
                 }
             }
 
             Button(
                 onClick = { settingsViewModel.logoutUser(activity) },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
             ) {
-                Icon(Icons.AutoMirrored.Filled.Logout, "Logout"); Spacer(Modifier.size(ButtonDefaults.IconSpacing)); Text("Log Out")
+                Icon(
+                    Icons.AutoMirrored.Filled.Logout,
+                    contentDescription = "Logout",
+                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Log Out")
             }
         }
-        Spacer(Modifier.weight(1f)) // Pushes the button row up if content is short.
-        // Remove or adjust if you want buttons higher.
+        Spacer(Modifier.height(16.dp)) // Ensure some space at the very bottom
     }
 }
 
+// SettingItem, FontSizeSetting, NotificationFrequencySetting composables
 @Composable
 fun SettingItem(
     title: String,

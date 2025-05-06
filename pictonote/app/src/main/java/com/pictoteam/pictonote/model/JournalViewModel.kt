@@ -7,10 +7,11 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.pictoteam.pictonote.appFirestore // For potential future direct use if needed
+import com.pictoteam.pictonote.appFirestore
 import com.pictoteam.pictonote.constants.*
-import com.pictoteam.pictonote.database.extractImagePathFromContent // Added import
+import com.pictoteam.pictonote.database.extractImagePathFromContent
 import com.pictoteam.pictonote.database.saveEntryToRemote
+import com.pictoteam.pictonote.datastore.SettingsDataStoreManager // Added
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -21,6 +22,8 @@ import java.io.IOException
 import java.time.LocalDateTime
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val settingsDataStoreManager = SettingsDataStoreManager(application) // Instance of DataStoreManager
 
     private val _capturedImageUri = MutableStateFlow<Uri?>(null)
     val capturedImageUri: StateFlow<Uri?> = _capturedImageUri.asStateFlow()
@@ -54,7 +57,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         Log.d("JournalVM", "Loading for edit: $filePath"); clearJournalState(); _editingFilePath.value = filePath
         viewModelScope.launch {
             try {
-                val (imgRelPath, loadedText) = readJournalEntryFromFileInternal(context, filePath) // Use internal helper
+                val (imgRelPath, loadedText) = readJournalEntryFromFileInternal(context, filePath)
                 withContext(Dispatchers.Main) {
                     if (imgRelPath != null) {
                         val imgFile = File(context.filesDir, imgRelPath)
@@ -88,19 +91,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     entryId = File(currentEditPath!!).name.substringAfter("journal_").removeSuffix(".txt")
                     val (existingImgRelPath, _) = readJournalEntryFromFileInternal(context, currentEditPath)
                     if (existingImgRelPath != null) {
-                        val currentImgFileUri = currentImgUri?.let { if (it.scheme == "file") it else null } // Only file URIs can be directly compared
+                        val currentImgFileUri = currentImgUri?.let { if (it.scheme == "file") it else null }
                         val existingImgFileUri = Uri.fromFile(File(context.filesDir, existingImgRelPath))
-                        if (currentImgUri != null && currentImgFileUri == existingImgFileUri) { // Image kept
+                        if (currentImgUri != null && currentImgFileUri == existingImgFileUri) {
                             contentBuilder.appendLine("$IMAGE_URI_MARKER$existingImgRelPath")
-                        } else if (currentImgUri == null) { /* Image cleared */ }
-                        // Note: Replacing an image in edit mode is not directly handled by this simple logic.
-                        // Assumes image is either kept as is, or cleared. New image capture is for new entries.
+                        }
                     }
                     contentBuilder.append(currentText)
                     finalContent = contentBuilder.toString()
                     overwriteTextFileInternal(context, currentEditPath, finalContent)
                     localSaveOk = true; Log.i("JournalVM", "Updated locally: $currentEditPath")
-                } else { // New Entry
+                } else {
                     var imgRelPath: String? = null
                     if (currentImgUri != null) {
                         imgRelPath = copyImageToInternalStorageInternal(context, currentImgUri)
@@ -113,12 +114,22 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                     entryId = savedFName.substringAfter("journal_").removeSuffix(".txt")
                     localSaveOk = true; Log.i("JournalVM", "New entry saved locally: $savedFName")
                 }
+
                 if (localSaveOk && entryId != null && finalContent != null) {
-                    if (saveEntryToRemote(context, entryId, finalContent)) {
-                        Log.i("JournalVM", "$entryId also saved to remote.")
+                    val appSettings = settingsDataStoreManager.appSettingsFlow.first()
+                    if (appSettings.autoSyncEnabled) {
+                        Log.d("JournalVM", "Auto-sync enabled. Attempting to sync entry: $entryId")
+                        val remoteSaveSuccess = saveEntryToRemote(context, entryId, finalContent)
+                        if (remoteSaveSuccess) {
+                            Log.i("JournalVM", "Auto-sync: Entry $entryId also saved to remote.")
+                        } else {
+                            Log.w("JournalVM", "Auto-sync: Entry $entryId failed to save to remote. Saved locally.")
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Saved locally. Auto-sync to cloud failed.", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     } else {
-                        Log.w("JournalVM", "$entryId remote save fail. Saved locally.")
-                        withContext(Dispatchers.Main) { Toast.makeText(context, "Saved locally. Cloud sync failed.", Toast.LENGTH_LONG).show() }
+                        Log.d("JournalVM", "Auto-sync disabled. Entry $entryId saved locally only.")
                     }
                 }
             } catch (e: Exception) {
@@ -134,7 +145,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Internal file helpers (renamed to avoid conflict if ArchiveFunctionality.kt is kept temporarily)
     private suspend fun readJournalEntryFromFileInternal(context: Context, filePath: String): Pair<String?, String?> = withContext(Dispatchers.IO) {
         val entryFile = File(filePath); if (!entryFile.exists()) throw IOException("File not found $filePath")
         val lines = entryFile.readLines()

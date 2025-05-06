@@ -28,6 +28,5 @@ class PictoNoteApplication : Application() {
     }
 }
 
-// Extension property to easily access firestore from any context that has access to applicationContext
 val Context.appFirestore: FirebaseFirestore
     get() = (this.applicationContext as PictoNoteApplication).firestore
