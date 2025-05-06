@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -118,8 +119,23 @@ fun calculateStreak(dates: Set<LocalDate>): Int {
 fun HomeScreen(viewModel: GeminiViewModel = viewModel()) {
     val context = LocalContext.current
     val config = LocalConfiguration.current
-    val isLandscapeLarge = config.screenWidthDp >= 840 && config.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val padding = if (config.screenWidthDp >= 600) 24.dp else 16.dp
+    val isTablet = config.screenWidthDp >= 600
+    val isLargeTablet = config.screenWidthDp >= 840
+    val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // Adjusted padding for different screen sizes
+    val horizontalPadding = when {
+        isLargeTablet -> 32.dp
+        isTablet -> 24.dp
+        else -> 16.dp
+    }
+
+    val verticalPadding = when {
+        isLargeTablet -> 24.dp
+        isTablet -> 20.dp
+        else -> 16.dp
+    }
+
     val scope = rememberCoroutineScope()
 
     var refreshKey by rememberSaveable { mutableIntStateOf(0) }
@@ -137,82 +153,306 @@ fun HomeScreen(viewModel: GeminiViewModel = viewModel()) {
     val summary by viewModel.weeklySummary.collectAsStateWithLifecycle()
     val loading by viewModel.isWeeklySummaryLoading.collectAsStateWithLifecycle()
 
+    // Larger spacing for tablets
+    val spacingBetweenCards = if (isTablet) 24.dp else 16.dp
+
+    // Different card sizes based on device
+    val cardElevation = if (isTablet) 4.dp else 2.dp
+    val cardShape = if (isTablet)
+        RoundedCornerShape(16.dp)
+    else
+        MaterialTheme.shapes.medium
+
+    // Card modifiers for better tablet display
+    val streakCardModifier = Modifier
+        .fillMaxWidth()
+        .let { if (isLargeTablet && isLandscape) it.heightIn(min = 260.dp) else it }
+        .padding(vertical = 8.dp)
+
+    val summaryCardModifier = Modifier
+        .fillMaxWidth()
+        .let { if (isLargeTablet && isLandscape) it.heightIn(min = 300.dp) else it }
+        .padding(vertical = 8.dp)
+
     // Top-level layout adapts for landscape/portrait
-    if (isLandscapeLarge) {
-        Row(Modifier.fillMaxSize().padding(horizontal = padding, vertical = padding), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                StreakCard(dates, streak, Modifier.fillMaxWidth().padding(vertical = 8.dp))
-                WeeklySummaryCard(summary, loading, onRefresh = { scope.launch { refreshKey++ } }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
+    if (isLargeTablet && isLandscape) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            horizontalArrangement = Arrangement.spacedBy(32.dp)
+        ) {
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
+                shape = cardShape
+            ) {
+                StreakContent(
+                    dates = dates,
+                    streak = streak,
+                    isTablet = true,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(if (isTablet) 24.dp else 16.dp)
+                )
             }
-            RemindersCard(Modifier.weight(1f).padding(vertical = 8.dp))
+
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
+                shape = cardShape
+            ) {
+                WeeklySummaryContent(
+                    summary = summary,
+                    loading = loading,
+                    onRefresh = { scope.launch { refreshKey++ } },
+                    isTablet = true,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(if (isTablet) 24.dp else 16.dp)
+                )
+            }
         }
     } else {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = padding, vertical = padding), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            StreakCard(dates, streak, Modifier.fillMaxWidth().padding(vertical = 8.dp))
-            RemindersCard(Modifier.fillMaxWidth().padding(vertical = 8.dp))
-            WeeklySummaryCard(summary, loading, onRefresh = { scope.launch { refreshKey++ } }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            verticalArrangement = Arrangement.spacedBy(spacingBetweenCards),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Card(
+                modifier = streakCardModifier,
+                elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
+                shape = cardShape
+            ) {
+                StreakContent(
+                    dates = dates,
+                    streak = streak,
+                    isTablet = isTablet,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(if (isTablet) 24.dp else 16.dp)
+                )
+            }
+
+            Card(
+                modifier = summaryCardModifier,
+                elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
+                shape = cardShape
+            ) {
+                WeeklySummaryContent(
+                    summary = summary,
+                    loading = loading,
+                    onRefresh = { scope.launch { refreshKey++ } },
+                    isTablet = isTablet,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(if (isTablet) 24.dp else 16.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-fun StreakCard(dates: Set<LocalDate>, streak: Int, modifier: Modifier = Modifier) {
+fun StreakContent(dates: Set<LocalDate>, streak: Int, isTablet: Boolean, modifier: Modifier = Modifier) {
     val today = LocalDate.now()
     val week = List(7) { i -> today.minusDays((6 - i).toLong()) }
 
-    Card(modifier = modifier) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Streak", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            val text = if (streak > 0) "$streak Day${if (streak != 1) "s" else ""}" else "0 Days"
-            val color = if (streak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = color)
-                if (streak > 0) Text("🔥", style = MaterialTheme.typography.titleLarge)
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-                week.forEach { date ->
-                    val initial = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()).first()
-                    val isToday = date == today
-                    val hasEntry = dates.contains(date)
-                    val (bg, fg, border) = when {
-                        isToday && hasEntry -> Triple(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary, MaterialTheme.colorScheme.primary)
-                        isToday && !hasEntry -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.secondary)
-                        hasEntry -> Triple(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f), MaterialTheme.colorScheme.onPrimaryContainer, Color.Transparent)
-                        else -> Triple(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), Color.Transparent)
-                    }
-                    Box(Modifier.size(40.dp).clip(CircleShape).border(if (isToday) 2.dp else 1.dp, border, CircleShape).background(bg).padding(4.dp), contentAlignment = Alignment.Center) {
-                        Text(initial.toString(), fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp, color = fg)
-                    }
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Streak",
+            style = if (isTablet)
+                MaterialTheme.typography.headlineMedium.copy(fontSize = 28.sp)
+            else
+                MaterialTheme.typography.headlineSmall
+        )
+
+        Spacer(Modifier.height(if (isTablet) 16.dp else 8.dp))
+
+        val text = if (streak > 0) "$streak Day${if (streak != 1) "s" else ""}" else "0 Days"
+        val color = if (streak > 0)
+            MaterialTheme.colorScheme.primary
+        else
+            MaterialTheme.colorScheme.onSurfaceVariant
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text,
+                style = if (isTablet)
+                    MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+                else
+                    MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = color
+            )
+            if (streak > 0) Text(
+                "🔥",
+                style = if (isTablet)
+                    MaterialTheme.typography.headlineLarge
+                else
+                    MaterialTheme.typography.titleLarge
+            )
+        }
+
+        Spacer(Modifier.height(if (isTablet) 32.dp else 16.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            week.forEach { date ->
+                val initial = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()).first()
+                val isToday = date == today
+                val hasEntry = dates.contains(date)
+
+                val (bg, fg, border) = when {
+                    isToday && hasEntry -> Triple(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.onPrimary,
+                        MaterialTheme.colorScheme.primary
+                    )
+                    isToday && !hasEntry -> Triple(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        MaterialTheme.colorScheme.secondary
+                    )
+                    hasEntry -> Triple(
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                        Color.Transparent
+                    )
+                    else -> Triple(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        Color.Transparent
+                    )
+                }
+
+                // Larger date circles for tablets
+                val circleSize = if (isTablet) 56.dp else 40.dp
+                val textSize = if (isTablet) 18.sp else 14.sp
+                val borderWidth = if (isToday) if (isTablet) 3.dp else 2.dp else 1.dp
+
+                Box(
+                    Modifier
+                        .size(circleSize)
+                        .clip(CircleShape)
+                        .border(borderWidth, border, CircleShape)
+                        .background(bg)
+                        .padding(4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        initial.toString(),
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = textSize,
+                        color = fg
+                    )
                 }
             }
         }
-    }
-}
 
-@Composable
-fun RemindersCard(modifier: Modifier = Modifier) {
-    Card(modifier = modifier) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Reminders", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { /* setup notifications */ }) { Text("Set Up Push Notifications") }
+        if (isTablet) {
+            // Additional guidance text for tablets
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Track your journal writing consistency",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
 @Composable
-fun WeeklySummaryCard(summary: String?, loading: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier) {
-    Card(modifier = modifier) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Weekly AI Summary", style = MaterialTheme.typography.headlineSmall)
-                IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Filled.Refresh, null) }
+fun WeeklySummaryContent(
+    summary: String?,
+    loading: Boolean,
+    onRefresh: () -> Unit,
+    isTablet: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Weekly AI Summary",
+                style = if (isTablet)
+                    MaterialTheme.typography.headlineMedium.copy(fontSize = 28.sp)
+                else
+                    MaterialTheme.typography.headlineSmall
+            )
+
+            // Larger refresh button for tablets
+            IconButton(
+                onClick = onRefresh,
+                enabled = !loading,
+                modifier = if (isTablet) Modifier.size(56.dp) else Modifier
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = "Refresh summary",
+                    modifier = if (isTablet) Modifier.size(32.dp) else Modifier
+                )
             }
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = 100.dp), contentAlignment = Alignment.Center) {
-                if (loading) CircularProgressIndicator() else Text(summary ?: "No summary available", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
+        }
+
+        Spacer(Modifier.height(if (isTablet) 20.dp else 12.dp))
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = if (isTablet) 160.dp else 100.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = if (isTablet) Modifier.size(48.dp) else Modifier,
+                    strokeWidth = if (isTablet) 4.dp else 2.dp
+                )
+            } else {
+                Text(
+                    summary ?: "No summary available",
+                    style = if (isTablet)
+                        MaterialTheme.typography.bodyLarge.copy(lineHeight = 28.sp)
+                    else
+                        MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Start
+                )
+            }
+        }
+
+        if (isTablet && !loading && summary != null) {
+            // Additional button for tablets
+            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = onRefresh,
+                modifier = Modifier.align(Alignment.End).height(48.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Update Summary", style = MaterialTheme.typography.titleMedium)
             }
         }
     }

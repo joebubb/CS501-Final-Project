@@ -1,4 +1,4 @@
-package com.pictoteam.pictonote.database
+package com.pictoteam.pictonote
 
 import android.content.Context
 import android.util.Log

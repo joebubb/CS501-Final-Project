@@ -1,6 +1,5 @@
 package com.pictoteam.pictonote.model
 
-// Journal entry management ViewModel controlling data flow for creating, saving and editing journal entries
 import android.app.Application
 import android.content.Context
 import android.net.Uri
@@ -8,7 +7,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.pictoteam.pictonote.appFirestore
+import com.pictoteam.pictonote.appFirestore // Ensure this import works with your project structure
 import com.pictoteam.pictonote.constants.*
 import com.pictoteam.pictonote.database.extractImagePathFromContent
 import com.pictoteam.pictonote.database.saveEntryToRemote
@@ -24,58 +23,53 @@ import java.time.LocalDateTime
 
 class JournalViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Settings access for auto-sync preferences
     private val settingsDataStoreManager = SettingsDataStoreManager(application)
 
-    // Journal entry image state
     private val _capturedImageUri = MutableStateFlow<Uri?>(null)
     val capturedImageUri: StateFlow<Uri?> = _capturedImageUri.asStateFlow()
 
-    // Journal entry text content
     private val _journalText = MutableStateFlow("")
     val journalText: StateFlow<String> = _journalText.asStateFlow()
 
-    // Saving state indicator for UI
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
-    // Path to file being edited (null if creating new entry)
     private val _editingFilePath = MutableStateFlow<String?>(null)
     val isEditing: StateFlow<Boolean> = _editingFilePath.map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    // Direct access to editing filepath for UI components
+    // Accessor for the raw value of _editingFilePath
     val editingFilePathValue: String?
         get() = _editingFilePath.value
 
-    // Updates the text content of the current journal entry
     fun updateJournalText(newText: String) {
         _journalText.value = newText
     }
 
-    // Handles a new image from camera or gallery
     fun onImageCaptured(uri: Uri) {
-        // Don't replace image if in edit mode to prevent accidental overwrite
+        // Only set image URI if we are NOT currently editing an existing entry's image.
+        // If editing, image handling is managed by loadEntryForEditing.
+        // This prevents an image taken while "editing text" from overwriting the existing image state.
         if (_editingFilePath.value == null) {
             _capturedImageUri.value = uri
             Log.d("JournalVM", "New image captured and set: $uri")
         } else {
             Log.w("JournalVM", "Image capture ignored while editing an existing entry. Current image URI: ${_capturedImageUri.value}")
-            // We could later add explicit image replacement during edit if needed
+            // Consider if you want to allow replacing an image during edit mode explicitly.
+            // If so, you'd need a different mechanism.
+            // For now, this logic prioritizes the loaded image during edit.
         }
     }
 
-    // Resets all journal state variables (used after save or when cancelling)
     fun clearJournalState() {
         Log.d("JournalVM", "Clearing journal state. Current editing path: ${_editingFilePath.value}")
         _capturedImageUri.value = null
         _journalText.value = ""
         _isSaving.value = false
-        _editingFilePath.value = null
+        _editingFilePath.value = null // This marks that we are no longer editing a specific file
         Log.d("JournalVM", "Journal state cleared.")
     }
 
-    // Checks if we're in a completely fresh state with no data
     fun isNewEntryState(): Boolean {
         val isNew = _capturedImageUri.value == null &&
                 _journalText.value.isEmpty() &&
@@ -85,19 +79,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         return isNew
     }
 
-    // Loads an existing entry for editing
+
     fun loadEntryForEditing(context: Context, filePath: String) {
         Log.d("JournalVM", "Attempting to load entry for editing: $filePath")
-        // Reset state but mark that we're editing this file
+        // Clear previous state before loading new, to avoid conflicts
+        // but keep _editingFilePath to mark we are in edit mode for *this* file
         _capturedImageUri.value = null
         _journalText.value = ""
-        _isSaving.value = false
-        _editingFilePath.value = filePath
+        _isSaving.value = false // Ensure saving flag is reset
+        _editingFilePath.value = filePath // Set the current editing path *first*
 
         viewModelScope.launch {
             try {
                 val (imgRelPath, loadedText) = readJournalEntryFromFileInternal(context, filePath)
-                withContext(Dispatchers.Main) {
+                withContext(Dispatchers.Main) { // Ensure UI updates are on the main thread
                     if (imgRelPath != null) {
                         val imgFile = File(context.filesDir, imgRelPath)
                         if (imgFile.exists()) {
@@ -119,13 +114,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 Log.e("JournalVM", "Error loading entry for editing: $filePath", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Error loading entry details.", Toast.LENGTH_LONG).show()
-                    clearJournalState() // Reset if loading fails
+                    // If loading fails, we should clear the editing state to avoid confusion
+                    clearJournalState() // This will set _editingFilePath.value to null
                 }
             }
         }
     }
 
-    // Main function to save or update a journal entry
+
     fun saveJournalEntry(context: Context, onComplete: (success: Boolean, wasEditing: Boolean) -> Unit) {
         if (_isSaving.value) {
             Log.w("JournalVM", "Save attempt ignored, already saving.")
@@ -135,19 +131,20 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
 
         val currentText = _journalText.value
         val currentImgUri = _capturedImageUri.value
-        val currentEditPath = _editingFilePath.value
+        val currentEditPath = _editingFilePath.value // This is the path of the file being edited, if any
 
         Log.d("JournalVM", "Attempting to save. Editing: ${currentEditPath != null}, Image: $currentImgUri, Text Blank: ${currentText.isBlank()}")
 
-        // Handle empty entry case
         if (currentImgUri == null && currentText.isBlank()) {
+            // For a new entry, if both are blank, there's nothing to save.
+            // If editing, and user clears everything, we might allow saving an empty entry (overwriting).
             if (currentEditPath == null) {
                 Toast.makeText(context, "Nothing to save", Toast.LENGTH_SHORT).show()
                 Log.d("JournalVM", "Save cancelled: Nothing to save (new entry).")
                 onComplete(false, false)
                 return
             }
-            // Allow clearing an existing entry
+            // Allow saving/overwriting an existing entry with blank content
             Log.d("JournalVM", "Proceeding to save/overwrite existing entry with blank content: $currentEditPath")
         }
 
@@ -163,13 +160,17 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 val contentBuilder = StringBuilder()
                 var finalImageRelativePath: String? = null
 
-                if (wasEditing) { // Updating existing entry
+                if (wasEditing) { // Overwriting an existing entry
                     entryIdForSync = File(currentEditPath!!).name.substringAfter("journal_").removeSuffix(".txt")
                     Log.d("JournalVM", "Updating existing entry: $currentEditPath (ID: $entryIdForSync)")
 
-                    // Handle image for existing entry
+                    // Check if the image URI is still the one from the file system (not a temp cache URI)
+                    // And if it matches the original image path (if one existed)
+                    // The _capturedImageUri during edit mode should point to the persistent internal file.
                     if (currentImgUri != null && currentImgUri.scheme == "file") {
-                        val imgFile = File(currentImgUri.path!!)
+                        // The URI points to a file. We need its relative path for the marker.
+                        // This assumes currentImgUri is the correct, persistent URI.
+                        val imgFile = File(currentImgUri.path!!) // Should not be null if scheme is file
                         if(imgFile.startsWith(context.filesDir)) {
                             finalImageRelativePath = imgFile.relativeTo(context.filesDir).path
                             Log.d("JournalVM", "Using existing/updated image for edit: $finalImageRelativePath")
@@ -180,42 +181,39 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                         Log.w("JournalVM", "Image URI for edit has unexpected scheme: ${currentImgUri.scheme}. Image will not be saved in marker.")
                     }
 
-                    // Build content with image marker if needed
+
                     if (finalImageRelativePath != null) {
                         contentBuilder.appendLine("$IMAGE_URI_MARKER$finalImageRelativePath")
                     }
                     contentBuilder.append(currentText)
                     finalContentForSync = contentBuilder.toString()
 
-                    // Save to file
                     overwriteTextFileInternal(context, currentEditPath, finalContentForSync)
                     localSaveOk = true
                     Log.i("JournalVM", "Entry updated locally: $currentEditPath")
 
-                } else { // Creating new entry
+                } else { // Saving a new entry
                     if (currentImgUri != null) {
+                        // This URI is from the camera (likely a cache file) or gallery
                         finalImageRelativePath = copyImageToInternalStorageInternal(context, currentImgUri)
                         if (finalImageRelativePath != null) {
                             contentBuilder.appendLine("$IMAGE_URI_MARKER$finalImageRelativePath")
                             Log.d("JournalVM", "New image copied to internal storage: $finalImageRelativePath")
                         } else {
                             Log.e("JournalVM", "Failed to copy new image to internal storage. Image will not be part of the entry.")
+                            // Potentially notify user, but save text part anyway
                             Toast.makeText(context, "Error saving image, text saved.", Toast.LENGTH_LONG).show()
                         }
                     }
-
-                    // Add text content
                     contentBuilder.append(currentText)
                     finalContentForSync = contentBuilder.toString()
 
-                    // Save to new file
                     val savedFileNameWithExt = saveTextToNewFileInternal(context, finalContentForSync)
                     entryIdForSync = savedFileNameWithExt.substringAfter("journal_").removeSuffix(".txt")
                     localSaveOk = true
                     Log.i("JournalVM", "New entry saved locally: $savedFileNameWithExt (ID: $entryIdForSync)")
                 }
 
-                // Handle cloud sync if enabled
                 if (localSaveOk && entryIdForSync != null && finalContentForSync != null) {
                     val appSettings = settingsDataStoreManager.appSettingsFlow.first()
                     if (appSettings.autoSyncEnabled) {
@@ -242,7 +240,7 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
                 withContext(Dispatchers.Main) {
                     if (localSaveOk) {
                         Toast.makeText(context, "Entry ${if (wasEditing) "updated" else "saved"}!", Toast.LENGTH_SHORT).show()
-                        clearJournalState() // Clear state after successful save
+                        clearJournalState() // Clear state after successful save (new or edit)
                     }
                     _isSaving.value = false
                     onComplete(localSaveOk, wasEditing)
@@ -252,7 +250,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Helper to read entry content from file
     private suspend fun readJournalEntryFromFileInternal(context: Context, filePath: String): Pair<String?, String?> = withContext(Dispatchers.IO) {
         val entryFile = File(filePath)
         if (!entryFile.exists()) {
@@ -266,13 +263,12 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         return@withContext Pair(imagePath, text)
     }
 
-    // Helper to save image to app storage
     private suspend fun copyImageToInternalStorageInternal(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
         val imagesDir = File(context.filesDir, JOURNAL_IMAGE_DIR)
         if (!imagesDir.exists()) {
             imagesDir.mkdirs()
         }
-        val timestamp = LocalDateTime.now().format(filenameDateTimeFormatter)
+        val timestamp = LocalDateTime.now().format(filenameDateTimeFormatter) // Ensure unique enough name
         val destinationFile = File(imagesDir, "IMG_${timestamp}_${uri.lastPathSegment ?: "image"}.jpg")
 
         try {
@@ -291,7 +287,6 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Helper to save text to a new file
     private suspend fun saveTextToNewFileInternal(context: Context, content: String): String = withContext(Dispatchers.IO) {
         val journalDir = File(context.filesDir, JOURNAL_DIR)
         if (!journalDir.exists()) {
@@ -301,14 +296,14 @@ class JournalViewModel(application: Application) : AndroidViewModel(application)
         val file = File(journalDir, "journal_$timestamp.txt")
         file.writeText(content)
         Log.d("JournalVM", "New text file saved: ${file.name} in ${journalDir.absolutePath}")
-        return@withContext file.name
+        return@withContext file.name // Return only the filename with extension
     }
 
-    // Helper to update an existing file
     private suspend fun overwriteTextFileInternal(context: Context, fullPath: String, content: String) = withContext(Dispatchers.IO) {
         val file = File(fullPath)
         if (!file.exists()) {
             Log.w("JournalVM", "Attempting to overwrite non-existent file: $fullPath. Creating it.")
+            // Ensure parent directory exists (should normally be the case)
             file.parentFile?.mkdirs()
         }
         file.writeText(content)

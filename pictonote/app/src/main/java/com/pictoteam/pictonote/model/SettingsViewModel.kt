@@ -26,60 +26,52 @@ import java.io.File
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Data store manager for persisting user preferences
-    private val dataStoreManager = SettingsDataStoreManager(application)
+    private val dataStoreManager = SettingsDataStoreManager(application) // Corrected variable name
     private val firebaseAuth = FirebaseAuth.getInstance()
 
-    // Exposed settings flow for UI to observe
-    val appSettings: StateFlow<AppSettings> = dataStoreManager.appSettingsFlow
+    val appSettings: StateFlow<AppSettings> = dataStoreManager.appSettingsFlow // Used corrected variable name
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = AppSettings(
+            initialValue = AppSettings( // Ensure this matches AppSettings data class
                 isDarkMode = false,
                 baseFontSize = SettingsDataStoreManager.DEFAULT_BASE_FONT_SIZE_SP,
                 notificationsEnabled = true,
                 notificationFrequency = SettingsDataStoreManager.DEFAULT_NOTIFICATION_FREQUENCY,
-                autoSyncEnabled = SettingsDataStoreManager.DEFAULT_AUTO_SYNC_ENABLED
+                autoSyncEnabled = SettingsDataStoreManager.DEFAULT_AUTO_SYNC_ENABLED // Use default from companion
             )
         )
 
-    // Toggle dark mode setting
     fun updateDarkMode(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.updateDarkMode(enabled)
         }
     }
 
-    // Update text size throughout the app
     fun updateBaseFontSize(sizeSp: Float) {
         viewModelScope.launch {
             dataStoreManager.updateBaseFontSize(sizeSp)
         }
     }
 
-    // Toggle notification permission
     fun updateNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.updateNotificationsEnabled(enabled)
         }
     }
 
-    // Change notification schedule
     fun updateNotificationFrequency(frequency: String) {
         viewModelScope.launch {
             dataStoreManager.updateNotificationFrequency(frequency)
         }
     }
 
-    // Toggle cloud sync feature
     fun updateAutoSyncEnabled(enabled: Boolean) {
         viewModelScope.launch {
             dataStoreManager.updateAutoSyncEnabled(enabled)
         }
     }
 
-    // Helper function to clean up local data during logout
     private suspend fun clearLocalUserData(application: Application) = withContext(Dispatchers.IO) {
         try {
             val journalDir = File(application.filesDir, JOURNAL_DIR)
@@ -105,24 +97,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Full logout process including data cleanup
     fun logoutUser(activity: Activity) {
         viewModelScope.launch {
             try {
                 Log.d("SettingsViewModel", "Attempting to log out...")
 
-                // First clear local data
                 val localDataCleared = clearLocalUserData(getApplication())
                 if (!localDataCleared) {
-                    // Continue with logout even if data clearing had issues
+                    // Optionally inform the user if local data clearing failed, but proceed with logout.
                     Log.w("SettingsViewModel", "Could not fully clear all local data.")
                 }
 
-                // Sign out from Firebase
                 firebaseAuth.signOut()
                 Log.d("SettingsViewModel", "Firebase sign-out successful.")
 
-                // Sign out from Google account
                 val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                     .requestIdToken("308837841018-apsd672boajq36mle8bt760slb0knhlm.apps.googleusercontent.com")
                     .requestEmail()
@@ -130,14 +118,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 GoogleSignIn.getClient(activity, gso).signOut().await()
                 Log.d("SettingsViewModel", "Google Sign-In client sign-out successful.")
 
-                // Navigate back to login screen
                 val intent = Intent(activity, AuthActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 }
                 activity.startActivity(intent)
                 Log.d("SettingsViewModel", "Navigated to AuthActivity.")
 
-                // Close current activity
                 activity.finish()
                 Log.d("SettingsViewModel", "MainActivity finished.")
 

@@ -46,7 +46,6 @@ fun android.content.Context.findActivity(): android.app.Activity {
 fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
     // Collect settings as state with lifecycle awareness to prevent unnecessary recompositions
     val settings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
-    val notificationFrequencies = listOf("Daily", "Weekly", "Bi-Weekly", "Monthly", "Never")
 
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -114,28 +113,6 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
         }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(8.dp))
 
-        // Push notifications toggle and frequency selection
-        SettingItem(title = "Push Notifications", description = "Receive reminders and updates") {
-            Switch(checked = settings.notificationsEnabled, onCheckedChange = { settingsViewModel.updateNotificationsEnabled(it) })
-        }
-        if (settings.notificationsEnabled) {
-            // Only show notification frequency options if notifications are enabled
-            NotificationFrequencySetting(
-                frequencies = notificationFrequencies,
-                selectedFrequency = settings.notificationFrequency,
-                onFrequencySelected = { settingsViewModel.updateNotificationFrequency(it) }
-            )
-        } else {
-            // Guidance text when notifications are disabled
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Enable push notifications to set frequency.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
         Spacer(Modifier.height(8.dp)); Divider(); Spacer(Modifier.height(16.dp))
 
         // Manual cloud sync section
@@ -327,44 +304,3 @@ fun FontSizeSetting(
     }
 }
 
-/**
- * Notification frequency selector with radio buttons
- * Only displayed when notifications are enabled
- */
-@Composable
-fun NotificationFrequencySetting(
-    frequencies: List<String>,
-    selectedFrequency: String,
-    onFrequencySelected: (String) -> Unit
-) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text("Notification Frequency", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Column {
-            frequencies.forEach { frequency ->
-                // Create selectable row for each frequency option
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = (frequency == selectedFrequency),
-                            onClick = { onFrequencySelected(frequency) },
-                            role = Role.RadioButton
-                        )
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = (frequency == selectedFrequency),
-                        onClick = null // Click handled by the selectable modifier
-                    )
-                    Text(
-                        text = frequency,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 16.dp)
-                    )
-                }
-            }
-        }
-    }
-}
