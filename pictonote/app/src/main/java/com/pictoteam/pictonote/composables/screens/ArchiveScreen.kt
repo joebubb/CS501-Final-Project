@@ -35,6 +35,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import java.time.format.DateTimeFormatter // Import DateTimeFormatter for the fix
 import java.time.format.TextStyle
 import java.util.*
 
@@ -193,7 +194,7 @@ fun MemoriesCard(
     navController: NavHostController
 ) {
     var journalEntries by remember(context, selectedYear, selectedMonth, selectedDay) { mutableStateOf<List<JournalEntryData>>(emptyList()) }
-    var currentEntryIndex by remember(selectedYear, selectedMonth, selectedDay) { mutableStateOf(0) }
+    var currentEntryIndex by remember(selectedYear, selectedMonth, selectedDay) { mutableIntStateOf(0) }
 
     // Load entries when selection changes
     LaunchedEffect(selectedYear, selectedMonth, selectedDay) {
@@ -366,11 +367,20 @@ fun getDaysWithEntriesForMonth(context: Context, year: Int, month: Int): Set<Int
         // Check if it's a file, starts with the correct prefix, and ends with .txt
         if (file.isFile && file.name.startsWith(filePrefix) && file.name.endsWith(".txt")) {
             try {
-                // Extract the date part (e.g., "2024-07-15") from the filename
-                val dateString = file.name.substringAfter("journal_").substringBefore("_") // Handle potential timestamp
+                // --- FIX START ---
+                // Extract the part after "journal_"
+                val namePart = file.name.substringAfter("journal_")
+                // Extract the date string, handling both timestamped and non-timestamped filenames
+                val dateString = if (namePart.contains("_")) {
+                    namePart.substringBefore("_") // Has timestamp: YYYY-MM-DD_HH-... -> YYYY-MM-DD
+                } else {
+                    namePart.removeSuffix(".txt") // No timestamp: YYYY-MM-DD.txt -> YYYY-MM-DD
+                }
+                // --- FIX END ---
+
                 val date = LocalDate.parse(dateString, filenameDateFormatter) // Use specific date formatter
 
-                // Double-check year and month match (already partially checked by prefix)
+                // Double-check year and month match (partially checked by prefix, but safer)
                 if (date.year == year && date.monthValue == month) {
                     days.add(date.dayOfMonth)
                 } else {
@@ -406,10 +416,21 @@ fun readJournalEntriesForDate(context: Context, year: Int, month: Int, day: Int)
                 // Use internal helper to read image path and text content
                 val (imagePath, textContent) = readJournalEntryFromFileInternal(file)
 
-                // Attempt to parse the full timestamp from the filename
+                // Attempt to parse the timestamp from the filename
                 val fileTimestamp = try {
-                    val timestampStr = file.name.substringAfter("journal_").substringBefore(".txt")
-                    LocalDateTime.parse(timestampStr, filenameDateTimeFormatter) // Use the detailed formatter
+                    // --- FIX START ---
+                    // Extract the part after "journal_"
+                    val namePart = file.name.substringAfter("journal_")
+                    // If it contains "_", assume it has a timestamp; otherwise, parse only date
+                    if (namePart.contains("_")) {
+                        val timestampStr = namePart.substringBefore(".txt") // Extract YYYY-MM-DD_HH-mm-ss-SSS
+                        LocalDateTime.parse(timestampStr, filenameDateTimeFormatter) // Use the detailed formatter
+                    } else {
+                        // No timestamp, parse just the date and set time to midnight (or handle as needed)
+                        val dateOnlyStr = namePart.removeSuffix(".txt")
+                        LocalDate.parse(dateOnlyStr, filenameDateFormatter).atStartOfDay() // Or return null if timestamp is essential
+                    }
+                    // --- FIX END ---
                 } catch (e: Exception) {
                     Log.w("ReadEntriesForDate", "Could not parse timestamp from filename: ${file.name}", e)
                     null // Set timestamp to null if parsing fails
@@ -430,7 +451,8 @@ fun readJournalEntriesForDate(context: Context, year: Int, month: Int, day: Int)
         }
     }
 
-    // Sort entries by timestamp (oldest first), handle null timestamps gracefully (e.g., place them last)
+    // Sort entries by timestamp (oldest first), handle null timestamps gracefully (e.g., place them last or first)
+    // Placing nulls last here:
     entries.sortBy { it.fileTimestamp ?: LocalDateTime.MAX }
     Log.d("ReadEntriesForDate", "Successfully read and sorted ${entries.size} entries for $dateString")
     return entries

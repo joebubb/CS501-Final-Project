@@ -26,14 +26,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState // Keep this for prompt suggestion
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-// import androidx.compose.ui.graphics.SolidColor // Not needed
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-// import androidx.compose.ui.text.TextStyle // Not needed
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,9 +55,9 @@ val promptTypes = listOf("Default", "Reflective", "Creative", "Goal-Oriented", "
 @Composable
 fun JournalScreen(
     navController: NavHostController,
-    entryFilePathToEdit: String?,
+    entryFilePathToEdit: String?, // This comes from NavArguments, null for new entry
     journalViewModel: JournalViewModel = viewModel(),
-    geminiViewModel: GeminiViewModel = viewModel() // Still need for Prompt
+    geminiViewModel: GeminiViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -68,12 +66,12 @@ fun JournalScreen(
     val capturedImageUri by journalViewModel.capturedImageUri.collectAsStateWithLifecycle()
     val journalText by journalViewModel.journalText.collectAsStateWithLifecycle()
     val isSaving by journalViewModel.isSaving.collectAsStateWithLifecycle()
+    // isEditing is now more reliably reflecting the VM's internal state if an actual path is being edited.
     val isEditing by journalViewModel.isEditing.collectAsStateWithLifecycle()
 
     // Only observe Prompt related state from GeminiViewModel
     val promptSuggestion by geminiViewModel.journalPromptSuggestion.observeAsState("Click 'Prompt' for suggestion")
     val isLoadingPrompt by geminiViewModel.isPromptLoading.observeAsState(false)
-    // REMOVED: reflectionResult and isLoadingReflection state observation
 
     // Camera related state
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
@@ -98,7 +96,6 @@ fun JournalScreen(
 
     // --- Helper Functions ---
     suspend fun <T> ListenableFuture<T>.await(): T {
-        // ... (implementation as before)
         return suspendCancellableCoroutine { continuation ->
             addListener({
                 try { continuation.resume(get()) }
@@ -109,30 +106,40 @@ fun JournalScreen(
     }
 
     // --- Effects ---
-    LaunchedEffect(entryFilePathToEdit, journalViewModel) {
-        // ... (load/clear logic remains the same) ...
+    LaunchedEffect(entryFilePathToEdit, lifecycleOwner) { // Using entryFilePathToEdit and lifecycleOwner as keys
         if (entryFilePathToEdit != null) {
-            Log.d("JournalScreen", "Effect: Received potential edit path (encoded): $entryFilePathToEdit")
+            // Mode: Editing an existing entry
+            Log.d("JournalScreen", "Effect: Edit mode. Received path (encoded): $entryFilePathToEdit")
             try {
                 val decodedPath = Uri.decode(entryFilePathToEdit)
-                Log.d("JournalScreen", "Effect: Decoded path for loading: $decodedPath")
+                // journalViewModel.loadEntryForEditing will call clearJournalState() internally
+                // before loading the new entry, which is good for resetting any prior state.
                 journalViewModel.loadEntryForEditing(context, decodedPath)
             } catch (e: IllegalArgumentException) {
                 Log.e("JournalScreen", "Error decoding file path for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error: Invalid entry identifier.", Toast.LENGTH_SHORT).show()
-                navController.popBackStack()
-            }
-            catch (e: Exception) {
+                navController.popBackStack() // Go back if path is invalid
+            } catch (e: Exception) {
                 Log.e("JournalScreen", "Error loading entry for editing: $entryFilePathToEdit", e)
                 Toast.makeText(context, "Error loading entry for editing.", Toast.LENGTH_SHORT).show()
-                navController.popBackStack()
+                navController.popBackStack() // Go back on other errors
             }
         } else {
-            if (!journalViewModel.isNewEntryState() && !journalViewModel.isEditing.value) {
-                Log.d("JournalScreen", "Effect: Clearing state for new entry.")
+            // Mode: New entry screen (entryFilePathToEdit from NavArgs is null)
+
+            // If the ViewModel's _editingFilePath is currently set (isEditing.value == true),
+            // it means the ViewModel still holds state for a *specific* entry it was editing.
+            // Since we are now on a screen intended for a *new* entry (because entryFilePathToEdit is null),
+            // we must clear the ViewModel's state to ensure it doesn't carry over the old edit.
+            if (journalViewModel.isEditing.value) { // isEditing is true if VM's _editingFilePath is not null
+                Log.w("JournalScreen", "Effect: New entry screen (NavArg path is null), but ViewModel was in edit mode. Clearing ViewModel for a fresh new entry.")
                 journalViewModel.clearJournalState()
             } else {
-                Log.d("JournalScreen", "Effect: State likely already correct for new entry or ongoing edit.")
+                // ViewModel is not in edit mode (its _editingFilePath is null).
+                // This means it's either a pristine new entry state, or it correctly holds
+                // an in-progress new entry (image/text already set).
+                // We do NOT clear the state here, allowing persistence of new entry data.
+                Log.d("JournalScreen", "Effect: New entry screen. ViewModel's current state for a new entry (if any) will be used.")
             }
         }
     }
@@ -175,7 +182,6 @@ fun JournalScreen(
                 Spacer(Modifier.height(16.dp))
 
                 // Image Display
-                // ... (no changes) ...
                 if (capturedImageUri != null) {
                     Image(
                         painter = rememberAsyncImagePainter(model = capturedImageUri),
@@ -189,7 +195,6 @@ fun JournalScreen(
 
 
                 // Journal Text Input
-                // ... (no changes) ...
                 Text("Journal Entry", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
                 BasicTextField(
                     value = journalText,
@@ -254,7 +259,7 @@ fun JournalScreen(
                     // Prompt Button - Adjusted enabled logic
                     Button(
                         onClick = { geminiViewModel.suggestJournalPrompt(selectedPromptType) },
-                        enabled = !isLoadingPrompt && !isSaving // Remove isLoadingReflection check
+                        enabled = !isLoadingPrompt && !isSaving
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -263,12 +268,9 @@ fun JournalScreen(
                 }
                 // --- End Row ---
 
-                // REMOVED: Spacer, ReflectionCard, Reflect Button
-
                 Spacer(Modifier.height(32.dp)) // Keep spacer before final buttons
 
                 // Cancel / Save/Update Buttons
-                // ... (no changes needed in this row) ...
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -277,12 +279,14 @@ fun JournalScreen(
                     // Cancel Button
                     OutlinedButton(
                         onClick = {
-                            if (isEditing) {
-                                navController.popBackStack()
-                                journalViewModel.clearJournalState()
-                            } else {
-                                journalViewModel.clearJournalState()
+                            val wasCurrentlyEditing = isEditing // Capture before clearing VM state
+                            journalViewModel.clearJournalState() // Always clear state in VM
+                            if (wasCurrentlyEditing) {
+                                navController.popBackStack() // If was editing, also navigate back
                             }
+                            // If it was a new entry (not editing), clearing state
+                            // will move UI to camera preview automatically
+                            // because capturedImageUri becomes null and !isEditing is true.
                         },
                         enabled = !isSaving
                     ) {
@@ -321,7 +325,6 @@ fun JournalScreen(
 
         // State 3: Fallback
         else -> {
-            // ... (no changes needed here) ...
             Box(
                 modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp),
                 contentAlignment = Alignment.Center
@@ -349,7 +352,6 @@ fun JournalScreen(
 
 @Composable
 fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
-    // ... (no changes needed here) ...
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().defaultMinSize(minHeight = 48.dp),
@@ -368,15 +370,12 @@ fun SuggestionCard(promptSuggestion: String, isLoadingPrompt: Boolean) {
     }
 }
 
-// REMOVED: ReflectionCard composable
-
 // --- Helper Function (takePhoto - no changes) ---
 private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
     onImageSaved: (Uri) -> Unit
 ) {
-    // ... (no changes needed here) ...
     val cacheDir = context.cacheDir ?: run {
         Log.e("TakePhoto", "Cache directory is null.")
         Toast.makeText(context, "Storage Error", Toast.LENGTH_SHORT).show()
